@@ -153,84 +153,24 @@ function AppInner() {
         {/* Body */}
         <div className="main-body">
 
-          {/* Sidebar */}
-          <aside className="sidebar">
-            <div className="sidebar-section">
-              <div className="sidebar-section-title">Images</div>
-              <div className="import-row">
-                <label className="import-btn">
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={e => handleFiles(e.target.files)}
-                  />
-                  <span className="import-btn-icon">↑</span>
-                  Upload
-                </label>
-                <button className="import-btn" onClick={() => setShowDrive(true)}>
-                  <span className="import-btn-icon" style={{ fontSize: 14 }}>
-                    <svg width="16" height="14" viewBox="0 0 87.3 78" style={{ display: 'inline' }}>
-                      <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                      <path d="M43.65 25L29.9 1.2C28.55.4 27 0 25.45 0c-1.55 0-3.1.4-4.5 1.2L6.6 11.15c-1.4.8-2.55 1.95-3.3 3.3L27.5 53z" fill="#00ac47"/>
-                      <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.1-.4 4.5-1.2z" fill="#2684fc"/>
-                      <path d="M73.4 14.45c-.8-1.4-1.95-2.55-3.3-3.3L55.8 1.2C54.45.4 52.9 0 51.35 0h-1.5L43.65 25l16.15 28h27.3c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                    </svg>
-                  </span>
-                  Drive
-                </button>
-              </div>
-
-              {/* Image grid — grouped by orientation */}
-              {state.images.length > 0 && (() => {
-                const portraits  = state.images.filter(i => i.orientation === 'portrait')
-                const landscapes = state.images.filter(i => i.orientation === 'landscape')
-                const squares    = state.images.filter(i => i.orientation === 'square')
-
-                const renderGroup = (imgs, label, badge) => imgs.length === 0 ? null : (
-                  <div key={label} style={{ marginTop: 10 }}>
-                    <div style={{
-                      fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase',
-                      color: 'var(--mute)', fontFamily: 'var(--font-mono)',
-                      marginBottom: 5, display: 'flex', justifyContent: 'space-between'
-                    }}>
-                      <span>{label}</span>
-                      <span style={{ color: 'var(--mute2)' }}>{imgs.length}</span>
-                    </div>
-                    <div className="img-grid">
-                      {imgs.map(img => (
-                        <div
-                          key={img.id}
-                          className={`img-thumb ${state.selected.includes(img.id) ? 'selected' : ''}`}
-                          draggable
-                          onDragStart={e => {
-                            e.dataTransfer.setData('sidebar-img-id', img.id)
-                            e.currentTarget.style.opacity = '.5'
-                          }}
-                          onDragEnd={e => e.currentTarget.style.opacity = '1'}
-                          title={`${img.name} · drag to plan grid`}
-                        >
-                          <img src={img.dataUrl} alt={img.name} loading="lazy" />
-                          {badge && (
-                            <span className={`orient-badge ${img.orientation}`}>{badge}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-
-                return (
-                  <>
-                    {renderGroup(portraits, 'Portrait', null)}
-                    {renderGroup(landscapes, 'Landscape', 'L')}
-                    {renderGroup(squares, 'Square', 'S')}
-                    <div className="img-count" style={{ marginTop: 8 }}>
-                      {state.images.length} total · {portraits.length}P · {landscapes.length}L{squares.length ? ` · ${squares.length}S` : ''}
-                    </div>
-                  </>
-                )
-              })()}
+          {/* Sidebar — Upload and Drive only */}
+          <aside className="sidebar" style={{ width: 80 }}>
+            <div className="sidebar-section" style={{ padding: 10 }}>
+              <label className="import-btn" style={{ flexDirection: 'column', padding: '12px 8px' }}>
+                <input type="file" multiple accept="image/*" onChange={e => handleFiles(e.target.files)} />
+                <span style={{ fontSize: 16 }}>↑</span>
+                <span style={{ fontSize: 8, marginTop: 3 }}>Upload</span>
+              </label>
+              <div style={{ height: 6 }} />
+              <button className="import-btn" style={{ flexDirection: 'column', padding: '12px 8px', width: '100%' }} onClick={() => setShowDrive(true)}>
+                <svg width="18" height="16" viewBox="0 0 87.3 78">
+                  <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                  <path d="M43.65 25L29.9 1.2C28.55.4 27 0 25.45 0c-1.55 0-3.1.4-4.5 1.2L6.6 11.15c-1.4.8-2.55 1.95-3.3 3.3L27.5 53z" fill="#00ac47"/>
+                  <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.1-.4 4.5-1.2z" fill="#2684fc"/>
+                  <path d="M73.4 14.45c-.8-1.4-1.95-2.55-3.3-3.3L55.8 1.2C54.45.4 52.9 0 51.35 0h-1.5L43.65 25l16.15 28h27.3c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                </svg>
+                <span style={{ fontSize: 8, marginTop: 3 }}>Drive</span>
+              </button>
             </div>
           </aside>
 

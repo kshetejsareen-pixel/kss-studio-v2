@@ -2,24 +2,44 @@ import { useState, useCallback, useRef } from 'react'
 import { useStore, claudeCall, M_HAIKU } from '../store.jsx'
 
 const SIZE_OPTIONS = [
-  { label: '1:1 Square',    ratio: '1:1',  w: 1080, h: 1080 },
-  { label: '4:5 Portrait ★', ratio: '4:5', w: 1080, h: 1350 },
-  { label: '9:16 Story',    ratio: '9:16', w: 1080, h: 1920 },
-  { label: '16:9 Wide',     ratio: '16:9', w: 1080, h: 608  },
+  { label: '1:1',  ratio: '1:1',  w: 1080, h: 1080 },
+  { label: '4:5 ★', ratio: '4:5', w: 1080, h: 1350 },
+  { label: '9:16', ratio: '9:16', w: 1080, h: 1920 },
+  { label: '16:9', ratio: '16:9', w: 1080, h: 608  },
+]
+
+const POST_FORMATS = [
+  { label: 'Global', ratio: null },
+  { label: '4:5',    ratio: '4:5',  w: 1080, h: 1350 },
+  { label: '1:1',    ratio: '1:1',  w: 1080, h: 1080 },
+  { label: '16:9',   ratio: '16:9', w: 1080, h: 608  },
+  { label: '9:16',   ratio: '9:16', w: 1080, h: 1920 },
 ]
 
 function makeEmptyPost() {
-  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50 }
+  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50, formatOverride: null }
+}
+
+function getCellRatio(post, globalSize) {
+  if (post.formatOverride) {
+    const f = POST_FORMATS.find(f => f.ratio === post.formatOverride)
+    if (f && f.w) return `${f.w}/${f.h}`
+  }
+  return `${globalSize.w}/${globalSize.h}`
 }
 
 export default function PlanTab({ showToast, onTabChange }) {
   const { state, set, resetPlan, setPlanItem } = useStore()
-  const [postCount, setPostCount] = useState(6)
-  const [size, setSize] = useState(SIZE_OPTIONS[1])
-  const [mix, setMix] = useState('mixed')
-  const [planning, setPlanning] = useState(false)
+  const [postCount, setPostCount]   = useState(6)
+  const [size, setSize]             = useState(SIZE_OPTIONS[1])
+  const [mix, setMix]               = useState('mixed')
+  const [planning, setPlanning]     = useState(false)
   const [inspectIdx, setInspectIdx] = useState(null)
-  const [dragOver, setDragOver] = useState(null)
+  const [dragOver, setDragOver]     = useState(null)
+  const [imageTab, setImageTab]     = useState('all')
+  const [gridScale, setGridScale]   = useState(1)
+  const [thumbScale, setThumbScale] = useState(1)
+  const [panModeIdx, setPanModeIdx] = useState(null)
   const panDrag = useRef(null)
 
   const imgByIdx = useCallback(idx => {
@@ -27,549 +47,387 @@ export default function PlanTab({ showToast, onTabChange }) {
     return state.images[idx - 1] || null
   }, [state.images])
 
-  // ── Set layout ──
   const handleSetLayout = () => {
     const current = state.plan.length
     if (current === postCount) { showToast(`Already ${postCount} slots`); return }
     if (current < postCount) {
-      const toAdd = postCount - current
-      const newPlan = [...state.plan, ...Array.from({ length: toAdd }, makeEmptyPost)]
-      resetPlan(newPlan)
+      resetPlan([...state.plan, ...Array.from({ length: postCount - current }, makeEmptyPost)])
     } else {
       const losing = state.plan.slice(postCount).filter(p => p.imageIndex).length
-      if (losing > 0 && !confirm(`Reducing to ${postCount} slots will remove ${losing} filled post${losing > 1 ? 's' : ''}. Continue?`)) return
+      if (losing > 0 && !confirm(`Reducing to ${postCount} slots will remove ${losing} filled posts. Continue?`)) return
       resetPlan(state.plan.slice(0, postCount))
     }
-    showToast(`Layout set to ${postCount} posts ✓`)
+    showToast(`Layout set to ${postCount} posts`)
   }
 
-  // ── Plan with Claude ──
   const handlePlanWithClaude = async () => {
-    if (!state.images.length) { showToast('Upload images first'); return }
+    if (!state.images.length) { showToast('Import images first'); return }
     const key = state.settings.anthropicKey
-    if (!key) { showToast('Add API key in Settings first'); return }
-
+    if (!key) { showToast('Add Anthropic API key in Settings'); return }
     setPlanning(true)
-    const count = postCount
     const totalImgs = state.images.length
     const handle = state.settings.handle || '@kshetejsareenstudios'
     const globalCtx = state.globalContext
-    const ratio = `${size.w}×${size.h}`
-
-    const imgDesc = state.images.slice(0, 30).map((img, i) =>
-      `${i + 1}. ${img.name} [${img.orientation}]`
-    ).join('\n')
-
-    const perPost = totalImgs / count
-    let distributionNote = ''
-    if (perPost >= 2) distributionNote = `SMART DISTRIBUTION: ${totalImgs} images across ${count} posts (~${Math.ceil(perPost)} slides each). Use CAROUSELS.`
-    else if (perPost >= 1.2) distributionNote = `Mix carousels (2-3 slides) and singles to cover all ${totalImgs} images.`
-    else distributionNote = `${totalImgs} images, ${count} posts — 1 image per post.`
-
+    const ratio = `${size.w}x${size.h}`
+    const imgDesc = state.images.slice(0, 30).map((img, i) => `${i + 1}. ${img.name} [${img.orientation}]`).join('\n')
+    const perPost = totalImgs / postCount
+    const distributionNote = perPost >= 2
+      ? `${totalImgs} images across ${postCount} posts — use CAROUSELS (~${Math.ceil(perPost)} slides each).`
+      : `${totalImgs} images, ${postCount} posts — 1 image per post.`
     const landscapes = state.images.filter(i => i.orientation === 'landscape').length
-    const portraits = state.images.filter(i => i.orientation === 'portrait').length
-    const orientNote = landscapes > 0 && portraits > 0
-      ? `CRITICAL: Never mix landscape and portrait images in the same carousel. Group by orientation.`
-      : ''
-
-    const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Plan image assignments ONLY — captions generated separately. Respond with valid JSON only.`
-    const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${count}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\n\nVISUAL DIVERSITY: Never place similar images adjacent. Alternate orientations, distances, subjects across grid rows.\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
-
+    const orientNote = landscapes > 0 ? `IMPORTANT: Never mix landscape and portrait in the same carousel.` : ''
+    const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Plan image assignments only. Respond with valid JSON only.`
+    const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
       const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
-      const newPlan = parsed.map(p => ({
-        ...makeEmptyPost(),
-        imageIndex: p.imageIndex || null,
-        slides: p.slides || [p.imageIndex].filter(Boolean),
-        type: p.type || 'single',
-        theme: p.theme || '',
-        notes: p.notes || '',
-      }))
-      resetPlan(newPlan)
-      set('postW', size.w)
-      set('postH', size.h)
-      showToast(`Layout ready — ${newPlan.length} posts ✓`)
-    } catch (e) {
-      showToast('Error: ' + e.message)
-      console.error(e)
-    } finally {
-      setPlanning(false)
-    }
+      resetPlan(parsed.map(p => ({ ...makeEmptyPost(), imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
+      set('postW', size.w); set('postH', size.h)
+      showToast(`Layout ready — ${parsed.length} posts`)
+    } catch (e) { showToast('Error: ' + e.message); console.error(e) }
+    finally { setPlanning(false) }
   }
 
-  // ── Drag and drop ──
   const handleCellDrop = useCallback((e, cellIdx) => {
-    e.preventDefault()
-    setDragOver(null)
+    e.preventDefault(); setDragOver(null)
     const p = state.plan[cellIdx]
     const isEmpty = !p?.imageIndex
-
-    // Sidebar image
     const sidebarId = e.dataTransfer.getData('sidebar-img-id')
     if (sidebarId) {
       const imgIdx = state.images.findIndex(im => im.id === sidebarId) + 1
       if (imgIdx > 0) {
-        if (isEmpty) {
-          const newPlan = [...state.plan]
-          newPlan[cellIdx] = { ...newPlan[cellIdx], imageIndex: imgIdx, slides: [imgIdx], type: 'single' }
-          resetPlan(newPlan)
-          setInspectIdx(cellIdx)
-          showToast(`Slot ${state.plan.length - cellIdx} filled ✓`)
-        } else if (e.shiftKey || p.type === 'carousel') {
-          appendSlide(cellIdx, imgIdx)
-        } else {
-          const newPlan = [...state.plan]
-          newPlan[cellIdx] = { ...newPlan[cellIdx], imageIndex: imgIdx, slides: [imgIdx] }
-          resetPlan(newPlan)
-          showToast('Cover swapped ✓ · shift+drop to add as slide')
-        }
+        if (isEmpty) { const np = [...state.plan]; np[cellIdx] = { ...np[cellIdx], imageIndex: imgIdx, slides: [imgIdx], type: 'single' }; resetPlan(np); setInspectIdx(cellIdx) }
+        else if (e.shiftKey || p.type === 'carousel') appendSlide(cellIdx, imgIdx)
+        else { const np = [...state.plan]; np[cellIdx] = { ...np[cellIdx], imageIndex: imgIdx, slides: [imgIdx] }; resetPlan(np) }
       }
       return
     }
-
-    // Grid reorder — swap
+    const uIdx = e.dataTransfer.getData('unassigned-img')
+    if (uIdx) { const imgIdx = parseInt(uIdx); if (!isNaN(imgIdx)) { if (isEmpty) { const np = [...state.plan]; np[cellIdx] = { ...np[cellIdx], imageIndex: imgIdx, slides: [imgIdx], type: 'single' }; resetPlan(np); setInspectIdx(cellIdx) } else appendSlide(cellIdx, imgIdx) }; return }
     const from = parseInt(e.dataTransfer.getData('plan-cell-idx'))
-    if (!isNaN(from) && from !== cellIdx) {
-      if (state.plan[from]?.locked || state.plan[cellIdx]?.locked) {
-        showToast('Cannot move — a locked post is involved')
-        return
-      }
-      const newPlan = [...state.plan]
-      ;[newPlan[from], newPlan[cellIdx]] = [newPlan[cellIdx], newPlan[from]]
-      if (inspectIdx === from) setInspectIdx(cellIdx)
-      else if (inspectIdx === cellIdx) setInspectIdx(from)
-      resetPlan(newPlan)
-      showToast('Posts swapped ✓')
+    if (!isNaN(from) && from !== cellIdx && !state.plan[from]?.locked && !state.plan[cellIdx]?.locked) {
+      const np = [...state.plan]; [np[from], np[cellIdx]] = [np[cellIdx], np[from]]
+      if (inspectIdx === from) setInspectIdx(cellIdx); else if (inspectIdx === cellIdx) setInspectIdx(from)
+      resetPlan(np); showToast('Swapped')
     }
   }, [state.plan, state.images, inspectIdx, resetPlan, showToast])
 
   const appendSlide = useCallback((planIdx, imgIdx) => {
     const p = state.plan[planIdx]
-    if (!p) return
     const slides = p.slides?.length ? [...p.slides] : [p.imageIndex].filter(Boolean)
     if (slides.includes(imgIdx)) { showToast('Already in carousel'); return }
     slides.push(imgIdx)
     setPlanItem(planIdx, { slides, type: 'carousel' })
-    showToast(`Slide added (${slides.length} total) ✓`)
+    showToast(`Slide added (${slides.length})`)
   }, [state.plan, setPlanItem, showToast])
 
-  const toggleLock = useCallback(idx => {
-    setPlanItem(idx, { locked: !state.plan[idx].locked })
-  }, [state.plan, setPlanItem])
-
-  const clearSlot = useCallback(idx => {
-    setPlanItem(idx, { imageIndex: null, slides: [], caption: '', panX: 50, panY: 50 })
-    if (inspectIdx === idx) setInspectIdx(null)
-  }, [inspectIdx, setPlanItem])
-
+  const toggleLock = useCallback(idx => setPlanItem(idx, { locked: !state.plan[idx].locked }), [state.plan, setPlanItem])
+  const clearSlot = useCallback(idx => { setPlanItem(idx, { imageIndex: null, slides: [], caption: '', panX: 50, panY: 50 }); if (inspectIdx === idx) setInspectIdx(null) }, [inspectIdx, setPlanItem])
   const removeSlide = useCallback((planIdx, slideIdx) => {
-    const p = state.plan[planIdx]
-    if (!p?.slides || p.slides.length <= 1) { showToast('Cannot remove last slide'); return }
+    const p = state.plan[planIdx]; if (!p?.slides || p.slides.length <= 1) { showToast('Cannot remove last slide'); return }
     const slides = p.slides.filter((_, i) => i !== slideIdx)
     setPlanItem(planIdx, { slides, imageIndex: slides[0], type: slides.length === 1 ? 'single' : 'carousel' })
   }, [state.plan, setPlanItem, showToast])
 
-  // ── Image pan — double-click to enter pan mode, drag to reposition ──
-  const [panModeIdx, setPanModeIdx] = useState(null) // which cell is in pan mode
-
   const handleDoubleClick = useCallback((e, idx) => {
     e.stopPropagation()
-    if (panModeIdx === idx) {
-      setPanModeIdx(null) // exit pan mode
-      showToast('Pan mode off')
-    } else {
-      setPanModeIdx(idx) // enter pan mode
-      showToast('Pan mode — drag to reposition · double-click to exit')
-    }
+    if (panModeIdx === idx) { setPanModeIdx(null); showToast('Pan mode off') }
+    else { setPanModeIdx(idx); showToast('Pan mode — drag to reposition') }
   }, [panModeIdx, showToast])
 
   const startPan = useCallback((e, idx) => {
-    if (panModeIdx !== idx) return // only pan if in pan mode
-    e.preventDefault()
-    e.stopPropagation()
-    panDrag.current = {
-      idx,
-      startX: e.clientX, startY: e.clientY,
-      startPanX: state.plan[idx]?.panX || 50,
-      startPanY: state.plan[idx]?.panY || 50,
-      rect: e.currentTarget.getBoundingClientRect(),
-    }
+    if (panModeIdx !== idx) return
+    e.preventDefault(); e.stopPropagation()
+    panDrag.current = { idx, startX: e.clientX, startY: e.clientY, startPanX: state.plan[idx]?.panX || 50, startPanY: state.plan[idx]?.panY || 50, rect: e.currentTarget.getBoundingClientRect() }
   }, [panModeIdx, state.plan])
 
-  // Global mouse move/up for pan
   const handleMouseMove = useCallback((e) => {
     if (!panDrag.current) return
     const { idx, startX, startY, startPanX, startPanY, rect } = panDrag.current
-    const dx = (e.clientX - startX) / rect.width * 100
-    const dy = (e.clientY - startY) / rect.height * 100
-    setPlanItem(idx, {
-      panX: Math.max(0, Math.min(100, startPanX - dx)),
-      panY: Math.max(0, Math.min(100, startPanY - dy)),
-    })
+    setPlanItem(idx, { panX: Math.max(0, Math.min(100, startPanX - (e.clientX - startX) / rect.width * 100)), panY: Math.max(0, Math.min(100, startPanY - (e.clientY - startY) / rect.height * 100)) })
   }, [setPlanItem])
 
   const handleMouseUp = useCallback(() => { panDrag.current = null }, [])
 
-  // ── All filled check ──
-  const allFilled = state.plan.length > 0 && state.plan.every(p => p.imageIndex)
-
-  // ── Unassigned images ──
   const usedIdxs = new Set()
-  state.plan.forEach(p => {
-    if (p.imageIndex) usedIdxs.add(p.imageIndex)
-    ;(p.slides || []).forEach(idx => { if (idx) usedIdxs.add(idx) })
-  })
+  state.plan.forEach(p => { if (p.imageIndex) usedIdxs.add(p.imageIndex); (p.slides || []).forEach(idx => { if (idx) usedIdxs.add(idx) }) })
   const unassigned = state.images.filter((_, i) => !usedIdxs.has(i + 1))
-
+  const portraits  = state.images.filter(i => i.orientation === 'portrait')
+  const landscapes = state.images.filter(i => i.orientation === 'landscape')
+  const squares    = state.images.filter(i => i.orientation === 'square')
+  const allFilled  = state.plan.length > 0 && state.plan.every(p => p.imageIndex)
   const inspectedPost = inspectIdx !== null ? state.plan[inspectIdx] : null
+  const thumbPx = Math.round(44 * thumbScale)
+
+  const renderThumb = (img) => {
+    const imgIdx = state.images.indexOf(img) + 1
+    return (
+      <div key={img.id} style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: '1px solid var(--border)', cursor: 'grab', position: 'relative' }}
+        draggable onDragStart={e => { e.dataTransfer.setData('sidebar-img-id', img.id); e.dataTransfer.setData('unassigned-img', imgIdx); e.currentTarget.style.opacity = '.5' }}
+        onDragEnd={e => e.currentTarget.style.opacity = '1'} title={img.name}>
+        <img src={img.dataUrl} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {img.orientation === 'landscape' && <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(74,122,191,.9)', color: '#fff', fontSize: 6, padding: '1px 2px', borderRadius: 1 }}>L</span>}
+      </div>
+    )
+  }
 
   return (
-    <div onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
+    <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 88px)', overflow: 'hidden' }} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
 
-      {/* ── PLAN CONTROLS ── */}
-      <div className="card">
-        <div className="card-title">Content Planner</div>
-        <div className="card-sub">Build your layout — drag images from the sidebar or use Plan with Claude</div>
-
-        <div className="row gap12" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
-          <div className="field">
-            <div className="field-label">No. of Posts</div>
-            <input
-              className="input"
-              type="number"
-              min={1} max={60}
-              value={postCount}
-              onChange={e => setPostCount(parseInt(e.target.value) || 1)}
-              style={{ width: 80, textAlign: 'center' }}
-            />
+      {/* LEFT: Controls + Grid */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden', minWidth: 0 }}>
+        <div className="card" style={{ padding: '12px 14px', flexShrink: 0 }}>
+          <div className="row gap12" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field">
+              <div className="field-label">Posts</div>
+              <input className="input" type="number" min={1} max={60} value={postCount} onChange={e => setPostCount(parseInt(e.target.value) || 1)} style={{ width: 60, textAlign: 'center' }} />
+            </div>
+            <div className="field flex1">
+              <div className="field-label">Mix</div>
+              <select className="select" value={mix} onChange={e => setMix(e.target.value)}>
+                <option value="mixed">Mixed</option>
+                <option value="stills">Stills only</option>
+                <option value="carousels">Carousels heavy</option>
+              </select>
+            </div>
+            <div className="field">
+              <div className="field-label">Global Format</div>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {SIZE_OPTIONS.map(s => (
+                  <button key={s.ratio} onClick={() => { setSize(s); set('postW', s.w); set('postH', s.h) }}
+                    style={{ padding: '4px 7px', fontSize: 9, fontFamily: 'var(--font-mono)', background: size.ratio === s.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${size.ratio === s.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: size.ratio === s.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                    {s.ratio}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={handleSetLayout}>✓ Set</button>
           </div>
-          <div className="field flex1">
-            <div className="field-label">Content Mix</div>
-            <select className="select" value={mix} onChange={e => setMix(e.target.value)}>
-              <option value="mixed">Mixed — stills, carousels, reels</option>
-              <option value="stills">Stills only</option>
-              <option value="carousels">Carousels heavy</option>
-              <option value="reels">Reels heavy</option>
-            </select>
+          <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handlePlanWithClaude} disabled={planning}>
+              {planning ? <><span className="spin" /> Planning…</> : '✦ Plan with Claude'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => {
+              const data = state.plan.map(p => ({ ...p, imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '', slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || '') }))
+              const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'KSS-Plan.json'; a.click(); showToast('Exported')
+            }}>↓ Export</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => {
+              const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
+              input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader()
+                reader.onload = ev => { try { const parsed = JSON.parse(ev.target.result); if (!Array.isArray(parsed)) { showToast('Invalid file'); return }
+                  const nameToIdx = {}; state.images.forEach((img, i) => { nameToIdx[img.name] = i + 1 })
+                  const restored = parsed.map(p => { const post = { ...makeEmptyPost(), ...p, date: '', time: '' }
+                    if (p.imageName && nameToIdx[p.imageName]) post.imageIndex = nameToIdx[p.imageName]
+                    else if (p.imageIndex && p.imageIndex <= state.images.length) post.imageIndex = p.imageIndex
+                    else post.imageIndex = null
+                    if (p.slideNames?.length) { post.slides = p.slideNames.map(n => nameToIdx[n]).filter(Boolean); if (!post.slides.length) post.slides = post.imageIndex ? [post.imageIndex] : [] } else if (post.imageIndex) post.slides = [post.imageIndex]
+                    return post })
+                  resetPlan(restored); showToast(`Imported — ${restored.filter(p => p.imageIndex).length} matched`)
+                } catch (err) { showToast('Import failed: ' + err.message) } }; reader.readAsText(file) }; input.click()
+            }}>↑ Import</button>
+            <div className="row" style={{ gap: 3, marginLeft: 'auto', alignItems: 'center' }}>
+              <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>Grid</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.5, +(s - 0.15).toFixed(2)))}>−</button>
+              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(1.8, +(s + 0.15).toFixed(2)))}>+</button>
+            </div>
           </div>
-          <div className="field" style={{ alignSelf: 'flex-end' }}>
-            <button className="btn btn-ghost btn-sm" onClick={handleSetLayout}>✓ Set Layout</button>
-          </div>
+          {allFilled && (
+            <button className="confirm-plan-btn" style={{ marginTop: 10 }}
+              onClick={() => { resetPlan(state.plan.map(p => p.imageIndex ? { ...p, locked: true } : p)); onTabChange('captions'); showToast('Plan locked — generate captions') }}>
+              ✓ Plan complete — Generate Captions →
+            </button>
+          )}
         </div>
 
-        <div className="field" style={{ marginBottom: 14 }}>
-          <div className="field-label">Post Format</div>
-          <div className="size-pills mt8">
-            {SIZE_OPTIONS.map(s => (
-              <button
-                key={s.ratio}
-                className={`size-pill ${size.ratio === s.ratio ? 'active' : ''}`}
-                onClick={() => {
-                  setSize(s)
-                  set('postW', s.w)
-                  set('postH', s.h)
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-          <div className="size-note">{size.ratio} ({size.w}×{size.h})</div>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          {state.plan.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--mute)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set posts and click ✓ Set — or use Plan with Claude</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                <span>Instagram grid · drag to reorder · dbl-click image to pan</span>
+                <span>{state.plan.length} posts</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale) }}>
+                {state.plan.map((p, i) => {
+                  const img = p.imageIndex ? imgByIdx(p.imageIndex) : null
+                  const isEmpty = !img
+                  const igNum = state.plan.length - i
+                  const slides = p.slides?.length || 1
+                  const isPanMode = panModeIdx === i
+                  const isInspected = inspectIdx === i
+                  const borderColor = isInspected ? 'var(--silver)' : isPanMode ? 'var(--silver)' : dragOver === i ? 'var(--silver)' : 'var(--border)'
+                  return (
+                    <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: 3, cursor: isPanMode ? 'grab' : isEmpty ? 'default' : 'pointer', background: 'var(--surface)', border: `1px solid ${borderColor}`, aspectRatio: getCellRatio(p, size), transition: 'border-color .15s' }}
+                      draggable={!isEmpty && !p.locked && !isPanMode}
+                      onDragStart={e => { e.dataTransfer.setData('plan-cell-idx', i); e.currentTarget.style.opacity = '.5' }}
+                      onDragEnd={e => e.currentTarget.style.opacity = '1'}
+                      onDragOver={e => { e.preventDefault(); setDragOver(i) }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={e => handleCellDrop(e, i)}
+                      onClick={() => !isEmpty && !isPanMode && setInspectIdx(i)}
+                      onDoubleClick={e => !isEmpty && handleDoubleClick(e, i)}
+                      onMouseDown={e => !isEmpty && startPan(e, i)}>
+                      {isEmpty ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
+                          <div style={{ fontSize: 8, color: 'var(--mute2)', fontFamily: 'var(--font-mono)' }}>#{igNum}</div>
+                          <div style={{ fontSize: Math.round(18 * gridScale), color: 'var(--mute2)', opacity: .3, lineHeight: 1 }}>+</div>
+                          <div style={{ fontSize: 8, color: 'var(--mute2)' }}>drag image</div>
+                        </div>
+                      ) : (
+                        <>
+                          <img src={img.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', objectPosition: `${p.panX || 50}% ${p.panY || 50}%` }} />
+                          {p.locked && <span style={{ position: 'absolute', top: 3, left: 3, fontSize: 9 }}>🔒</span>}
+                          <div style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(0,0,0,.7)', color: 'var(--silver)', fontSize: 7, padding: '1px 4px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>
+                            {p.type}{p.type === 'carousel' && slides > 1 ? ` ▤${slides}` : ''}
+                            {p.formatOverride ? ` · ${p.formatOverride}` : ''}
+                          </div>
+                          {!p.caption && <div style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(138,58,58,.85)', color: '#fff', fontSize: 7, padding: '1px 4px', borderRadius: 2 }}>no cap</div>}
+                          {isPanMode && (
+                            <div style={{ position: 'absolute', inset: 0, border: '2px solid var(--silver)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.15)', pointerEvents: 'none' }}>
+                              <div style={{ background: 'rgba(0,0,0,.75)', color: 'var(--silver)', fontSize: 8, padding: '3px 8px', borderRadius: 10, fontFamily: 'var(--font-mono)' }}>drag · dbl-click to exit</div>
+                            </div>
+                          )}
+                          <div className="grid-cell-hover" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.8))', opacity: 0, transition: 'opacity .2s', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 5, gap: 3 }}>
+                            <div style={{ fontSize: 8, color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>#{igNum} · {p.theme || p.type}</div>
+                            <div style={{ display: 'flex', gap: 3 }}>
+                              {[['inspect', () => setInspectIdx(i)], [p.locked ? '🔓' : '🔒', () => toggleLock(i)], ['✕', () => clearSlot(i)]].map(([label, action], li) => (
+                                <button key={li} onClick={e => { e.stopPropagation(); action() }}
+                                  style={{ padding: '2px 5px', fontSize: 7, background: 'rgba(0,0,0,.6)', border: '1px solid var(--border2)', borderRadius: 2, color: li === 0 ? 'var(--silver)' : 'var(--text2)', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
-
-        {/* Primary action */}
-        <button
-          className="btn btn-primary btn-full"
-          onClick={handlePlanWithClaude}
-          disabled={planning}
-          style={{ marginBottom: 8 }}
-        >
-          {planning ? <><span className="spin" /> Building layout…</> : '✦ Plan with Claude'}
-        </button>
-
-        {/* Secondary actions */}
-        <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => {
-            // Export plan with image names for reliable reimport
-            const exportData = state.plan.map(p => ({
-              ...p,
-              // Store image names alongside indices for filename-based matching on reimport
-              imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '',
-              slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || ''),
-            }))
-            const a = document.createElement('a')
-            a.href = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' }))
-            a.download = 'KSS-Plan.json'
-            a.click()
-            showToast('Plan exported ✓')
-          }}>↓ Export</button>
-
-          <button className="btn btn-ghost btn-sm" onClick={() => {
-            const input = document.createElement('input')
-            input.type = 'file'
-            input.accept = '.json,application/json'
-            input.onchange = e => {
-              const file = e.target.files[0]
-              if (!file) return
-              const reader = new FileReader()
-              reader.onload = ev => {
-                try {
-                  const parsed = JSON.parse(ev.target.result)
-                  if (!Array.isArray(parsed)) { showToast('Invalid plan file'); return }
-
-                  // Build filename → index map from currently loaded images
-                  const nameToIdx = {}
-                  state.images.forEach((img, i) => { nameToIdx[img.name] = i + 1 })
-
-                  const restored = parsed.map(p => {
-                    const post = { ...makeEmptyPost(), ...p, date: '', time: '' }
-
-                    // Match cover by filename first, fall back to stored index
-                    if (p.imageName && nameToIdx[p.imageName]) {
-                      post.imageIndex = nameToIdx[p.imageName]
-                    } else if (p.imageIndex && p.imageIndex <= state.images.length) {
-                      post.imageIndex = p.imageIndex
-                    } else {
-                      post.imageIndex = null
-                    }
-
-                    // Match slides by filename
-                    if (p.slideNames?.length) {
-                      post.slides = p.slideNames
-                        .map(name => nameToIdx[name])
-                        .filter(Boolean)
-                      if (post.slides.length === 0) post.slides = post.imageIndex ? [post.imageIndex] : []
-                    } else if (post.imageIndex) {
-                      post.slides = [post.imageIndex]
-                    }
-
-                    return post
-                  })
-
-                  resetPlan(restored)
-                  const matched = restored.filter(p => p.imageIndex).length
-                  showToast(`Plan imported — ${restored.length} posts, ${matched} images matched ✓`)
-                } catch (err) { showToast('Import failed: ' + err.message) }
-              }
-              reader.readAsText(file)
-            }
-            input.click()
-          }}>↑ Import</button>
-        </div>
-
-        {/* Confirm + go to captions */}
-        {allFilled && (
-          <button
-            className="confirm-plan-btn"
-            onClick={() => {
-              const newPlan = state.plan.map(p => p.imageIndex ? { ...p, locked: true } : p)
-              resetPlan(newPlan)
-              onTabChange('captions')
-              showToast('Plan locked ✓ — generate captions')
-            }}
-          >
-            ✓ Plan complete — Generate Captions →
-          </button>
-        )}
       </div>
 
-      {/* ── PLAN WORKSPACE ── */}
-      {state.plan.length > 0 && (
-        <div className="plan-workspace">
+      {/* RIGHT: Image Bank + Inspector */}
+      <div style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
 
-          {/* Grid */}
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                color: 'var(--mute)',
-                fontFamily: 'var(--font-mono)',
-                marginBottom: 8,
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span>Instagram grid · drag to reorder · alt+drag image to pan</span>
-              <span>{state.plan.length} posts</span>
+        {/* Image Bank */}
+        <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: inspectIdx !== null ? '0 0 auto' : 1, maxHeight: inspectIdx !== null ? '44%' : '100%' }}>
+          <div className="row" style={{ marginBottom: 8, gap: 5 }}>
+            <div style={{ display: 'flex', gap: 3, flex: 1 }}>
+              {[['all', `All (${state.images.length})`], ['unassigned', `Free (${unassigned.length})`]].map(([tab, label]) => (
+                <button key={tab} onClick={() => setImageTab(tab)}
+                  style={{ padding: '3px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.06em', background: imageTab === tab ? 'var(--silver-glow)' : 'none', border: `1px solid ${imageTab === tab ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: imageTab === tab ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <div className="plan-grid">
-              {state.plan.map((p, i) => {
-                const img = p.imageIndex ? imgByIdx(p.imageIndex) : null
-                const isEmpty = !img
-                const igNum = state.plan.length - i
-                const isInspected = inspectIdx === i
-                const slides = p.slides?.length || 1
-
-                return (
-                  <div
-                    key={i}
-                    className={`plan-cell ${isEmpty ? 'empty' : ''} ${isInspected ? 'inspected' : ''} ${p.locked ? 'locked' : ''} ${dragOver === i ? 'drag-over' : ''} ${panModeIdx === i ? 'pan-mode' : ''}`}
-                    style={{
-                      aspectRatio: `${size.w}/${size.h}`,
-                      cursor: panModeIdx === i ? 'grab' : undefined,
-                    }}
-                    draggable={!isEmpty && !p.locked}
-                    onDragStart={e => { e.dataTransfer.setData('plan-cell-idx', i); e.currentTarget.style.opacity = '.4' }}
-                    onDragEnd={e => e.currentTarget.style.opacity = '1'}
-                    onDragOver={e => { e.preventDefault(); setDragOver(i) }}
-                    onDragLeave={() => setDragOver(null)}
-                    onDrop={e => handleCellDrop(e, i)}
-                    onClick={() => !isEmpty && panModeIdx !== i && setInspectIdx(i)}
-                    onDoubleClick={e => !isEmpty && handleDoubleClick(e, i)}
-                    onMouseDown={e => !isEmpty && startPan(e, i)}
-                    title={isEmpty ? `Slot ${igNum} — drag image here` : `Post #${igNum} · click to inspect · alt+drag to pan`}
-                  >
-                    {isEmpty ? (
-                      <div className="cell-empty-inner">
-                        <div className="cell-num">#{igNum}</div>
-                        <div className="cell-plus">+</div>
-                        <div className="cell-hint">drag image</div>
-                      </div>
-                    ) : (
-                      <>
-                        <img
-                          src={img.dataUrl}
-                          alt=""
-                          style={{
-                            width: '100%', height: '100%',
-                            objectFit: 'cover', display: 'block',
-                            objectPosition: `${p.panX || 50}% ${p.panY || 50}%`,
-                          }}
-                        />
-                        {p.locked && <span className="cell-lock-icon">🔒</span>}
-                        <div className="cell-type-badge">
-                          {p.type}{p.type === 'carousel' && slides > 1 ? ` ▤${slides}` : ''}
-                        </div>
-                        {!p.caption && <div className="cell-no-cap">no cap</div>}
-                        {panModeIdx === i && (
-                          <div style={{
-                            position: 'absolute', inset: 0,
-                            border: '2px solid var(--silver)',
-                            borderRadius: 'var(--r)',
-                            pointerEvents: 'none',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <div style={{
-                              background: 'rgba(0,0,0,.7)', color: 'var(--silver)',
-                              fontSize: 9, padding: '3px 8px', borderRadius: 10,
-                              fontFamily: 'var(--font-mono)',
-                            }}>drag to pan · dbl-click to exit</div>
-                          </div>
-                        )}
-                        <div className="cell-overlay">
-                          <div className="cell-meta">#{igNum} · {p.theme || p.type}</div>
-                          <div className="cell-actions">
-                            <button className="cell-action-btn silver"
-                              onClick={e => { e.stopPropagation(); setInspectIdx(i) }}>inspect</button>
-                            <button className="cell-action-btn"
-                              onClick={e => { e.stopPropagation(); toggleLock(i) }}>
-                              {p.locked ? '🔓' : '🔒'}
-                            </button>
-                            <button className="cell-action-btn"
-                              onClick={e => { e.stopPropagation(); clearSlot(i) }}>✕</button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+            <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.max(0.5, +(s - 0.2).toFixed(1)))}>−</button>
+            <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.min(2.5, +(s + 0.2).toFixed(1)))}>+</button>
           </div>
-
-          {/* Carousel Inspector */}
-          <div className="carousel-inspector">
-            {inspectedPost ? (
-              <>
-                <div className="inspector-header">
-                  <div className="inspector-title">
-                    Post #{state.plan.length - inspectIdx}
-                  </div>
-                  <div className="inspector-type-btns">
-                    {['single', 'carousel', 'reel'].map(t => (
-                      <button
-                        key={t}
-                        className={`type-btn ${inspectedPost.type === t ? 'active' : ''}`}
-                        onClick={() => setPlanItem(inspectIdx, { type: t })}
-                      >{t}</button>
-                    ))}
-                    <button
-                      className={`type-btn ${inspectedPost.locked ? 'active' : ''}`}
-                      onClick={() => toggleLock(inspectIdx)}
-                      style={{ marginLeft: 4 }}
-                    >{inspectedPost.locked ? '🔒' : '🔓'}</button>
-                  </div>
-                </div>
-
-                {/* Slides */}
-                {inspectedPost.slides?.length > 0 && (
-                  <div className="inspector-slides" style={{ marginBottom: 12 }}>
-                    {inspectedPost.slides.map((idx, si) => {
-                      const sImg = imgByIdx(idx)
-                      return (
-                        <div key={si} className="slide-thumb">
-                          {sImg && <img src={sImg.dataUrl} alt="" />}
-                          <div className="slide-num">{si + 1}</div>
-                          {inspectedPost.slides.length > 1 && (
-                            <button className="slide-remove"
-                              onClick={() => removeSlide(inspectIdx, si)}>✕</button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Unassigned */}
-                {unassigned.length > 0 && (
-                  <>
-                    <div className="inspector-unassigned-label">
-                      {unassigned.length} unassigned — click to add to carousel
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {imageTab === 'all' ? (
+              state.images.length === 0 ? (
+                <div style={{ fontSize: 10, color: 'var(--mute)', textAlign: 'center', padding: '24px 0', fontFamily: 'var(--font-mono)' }}>No images — upload or import from Drive</div>
+              ) : (
+                [{ label: 'Portrait', imgs: portraits }, { label: 'Landscape', imgs: landscapes }, { label: 'Square', imgs: squares }].filter(g => g.imgs.length).map(group => (
+                  <div key={group.label} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{group.label}</span><span style={{ color: 'var(--mute2)' }}>{group.imgs.length}</span>
                     </div>
-                    <div className="unassigned-grid">
-                      {unassigned.map(img => {
-                        const imgIdx = state.images.indexOf(img) + 1
-                        return (
-                          <div
-                            key={img.id}
-                            className="unassigned-thumb"
-                            onClick={() => appendSlide(inspectIdx, imgIdx)}
-                            draggable
-                            onDragStart={e => e.dataTransfer.setData('unassigned-img', imgIdx)}
-                            title={`${img.name} · click to add`}
-                          >
-                            <img src={img.dataUrl} alt="" />
-                            {img.orientation !== 'portrait' && (
-                              <span className={`orient-badge ${img.orientation}`} style={{ position: 'absolute', top: 2, left: 2 }}>
-                                {img.orientation === 'landscape' ? 'L' : 'S'}
-                              </span>
-                            )}
-                            <div className="unassigned-add">+</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </>
-                )}
-
-                {unassigned.length === 0 && (
-                  <div style={{ fontSize: 10, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>
-                    All images assigned ✓
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{group.imgs.map(renderThumb)}</div>
                   </div>
-                )}
-              </>
+                ))
+              )
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 200, gap: 8 }}>
-                <div style={{ fontSize: 28, opacity: .2 }}>≡</div>
-                <div style={{ fontSize: 11, color: 'var(--mute)', fontFamily: 'var(--font-mono)', textAlign: 'center' }}>
-                  Click any post in the grid<br/>to inspect its slides
-                </div>
-              </div>
+              unassigned.length === 0 ? (
+                <div style={{ fontSize: 10, color: 'var(--silver)', textAlign: 'center', padding: '24px 0', fontFamily: 'var(--font-mono)' }}>All images assigned ✓</div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>{unassigned.map(renderThumb)}</div>
+              )
             )}
           </div>
         </div>
-      )}
+
+        {/* Inspector */}
+        {inspectIdx !== null && inspectedPost && (
+          <div className="card" style={{ padding: 12, flex: 1, overflow: 'auto' }}>
+            <div className="row" style={{ marginBottom: 10 }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500, flex: 1 }}>Post #{state.plan.length - inspectIdx}</div>
+              <button onClick={() => setInspectIdx(null)} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 14 }}>✕</button>
+            </div>
+
+            {/* Type */}
+            <div className="row" style={{ gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
+              {['single', 'carousel', 'reel'].map(t => (
+                <button key={t} onClick={() => setPlanItem(inspectIdx, { type: t })}
+                  style={{ padding: '3px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.06em', background: inspectedPost.type === t ? 'var(--silver-glow)' : 'var(--surface2)', border: `1px solid ${inspectedPost.type === t ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: inspectedPost.type === t ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                  {t}
+                </button>
+              ))}
+              <button onClick={() => toggleLock(inspectIdx)}
+                style={{ padding: '3px 8px', fontSize: 9, marginLeft: 'auto', background: inspectedPost.locked ? 'var(--green-dim)' : 'none', border: `1px solid ${inspectedPost.locked ? 'var(--green)' : 'var(--border)'}`, borderRadius: 2, color: inspectedPost.locked ? 'var(--green)' : 'var(--mute)', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                {inspectedPost.locked ? '🔒' : '🔓'}
+              </button>
+            </div>
+
+            {/* Format override */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>Format override</div>
+              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                {POST_FORMATS.map(f => (
+                  <button key={f.label} onClick={() => setPlanItem(inspectIdx, { formatOverride: f.ratio })}
+                    style={{ padding: '3px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: inspectedPost.formatOverride === f.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${inspectedPost.formatOverride === f.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: inspectedPost.formatOverride === f.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Slides */}
+            {inspectedPost.slides?.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>Slides ({inspectedPost.slides.length})</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4 }}>
+                  {inspectedPost.slides.map((idx, si) => {
+                    const sImg = imgByIdx(idx)
+                    return (
+                      <div key={si} style={{ position: 'relative', aspectRatio: '1', borderRadius: 2, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        {sImg && <img src={sImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                        <div style={{ position: 'absolute', top: 2, left: 2, background: 'rgba(0,0,0,.7)', color: 'var(--silver)', fontSize: 7, padding: '1px 3px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>{si + 1}</div>
+                        {inspectedPost.slides.length > 1 && (
+                          <button onClick={() => removeSlide(inspectIdx, si)} style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(138,58,58,.85)', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add unassigned */}
+            {unassigned.length > 0 && (
+              <>
+                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>Add to carousel</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                  {unassigned.slice(0, 12).map(img => {
+                    const imgIdx = state.images.indexOf(img) + 1
+                    return (
+                      <div key={img.id} style={{ width: 38, height: 38, borderRadius: 2, overflow: 'hidden', border: '1px dashed var(--border2)', cursor: 'pointer', flexShrink: 0 }}
+                        onClick={() => appendSlide(inspectIdx, imgIdx)} title={img.name}>
+                        <img src={img.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                    )
+                  })}
+                  {unassigned.length > 12 && <div style={{ fontSize: 9, color: 'var(--mute)', alignSelf: 'center', fontFamily: 'var(--font-mono)' }}>+{unassigned.length - 12}</div>}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
