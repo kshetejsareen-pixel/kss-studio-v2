@@ -8,38 +8,42 @@ const M_OPUS   = 'claude-opus-4-5'
 const M_SONNET = 'claude-sonnet-4-5'
 const M_HAIKU  = 'claude-haiku-4-5-20251001'
 
-const initialState = {
-  // Images
-  images: [],           // { id, name, dataUrl, orientation, width, height }
-  selected: [],         // selected image IDs
+// Load saved settings from localStorage at startup
+function loadSavedSettings() {
+  try {
+    const s = localStorage.getItem('kss_settings')
+    return s ? JSON.parse(s) : {}
+  } catch { return {} }
+}
 
-  // Plan
-  plan: [],             // { imageIndex, slides, type, caption, theme, notes, locked, panX, panY }
+function loadSavedContext() {
+  try { return localStorage.getItem('kss_global_context') || '' } catch { return '' }
+}
+
+const saved = loadSavedSettings()
+const savedContext = loadSavedContext()
+
+const initialState = {
+  images: [],
+  selected: [],
+  plan: [],
   postW: 1080,
   postH: 1350,
   designSize: '4:5',
-
-  // Queue
-  queue: [],            // { id, imageDataUrl, caption, firstComment, type, date, time, status }
-
-  // Global context
-  globalContext: '',
-
-  // Settings
+  queue: [],
+  globalContext: savedContext,
   settings: {
-    anthropicKey: '',
-    googleKey: '',
-    handle: '@kshetejsareenstudios',
-    hashtags: '',
-    cloudName: 'dsouvrzlr',
-    cloudPreset: 'ml_default',
-    metaToken: '',
-    igAccountId: '',
+    anthropicKey: saved.anthropicKey || '',
+    googleKey: saved.googleKey || '',
+    handle: saved.handle || '@kshetejsareenstudios',
+    hashtags: saved.hashtags || '',
+    cloudName: saved.cloudName || 'dsouvrzlr',
+    cloudPreset: saved.cloudPreset || 'ml_default',
+    metaToken: saved.metaToken || '',
+    igAccountId: saved.igAccountId || '',
   },
-
-  // UI state
   activeTab: 'plan',
-  inspectIdx: null,      // which plan post is selected in inspector
+  inspectIdx: null,
 }
 
 function reducer(state, action) {
