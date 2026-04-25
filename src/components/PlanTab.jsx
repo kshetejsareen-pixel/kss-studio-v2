@@ -68,7 +68,7 @@ export default function PlanTab({ showToast, onTabChange }) {
     const totalImgs = state.images.length
     const handle = state.settings.handle || '@kshetejsareenstudios'
     const globalCtx = state.globalContext
-    const ratio = `${size.w}x${size.h}`
+    const ratio = `${size.w}×${size.h}`
     const imgDesc = state.images.slice(0, 30).map((img, i) => `${i + 1}. ${img.name} [${img.orientation}]`).join('\n')
     const perPost = totalImgs / postCount
     const distributionNote = perPost >= 2
@@ -80,7 +80,10 @@ export default function PlanTab({ showToast, onTabChange }) {
     const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
-      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
+      // Extract JSON array from response — handle any surrounding text
+      const match = raw.match(/\[[\s\S]*\]/)
+      if (!match) throw new Error('No JSON array in response')
+      const parsed = JSON.parse(match[0])
       resetPlan(parsed.map(p => ({ ...makeEmptyPost(), imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
       set('postW', size.w); set('postH', size.h)
       showToast(`Layout ready — ${parsed.length} posts`)
