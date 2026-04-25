@@ -37,26 +37,37 @@ async function fetchFolderImages(folderId, apiKey) {
 }
 
 async function loadDriveImage(fileId, apiKey) {
-  // Try API download first, fall back to thumbnail
-  const urls = [
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`,
-    `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`,
-  ]
-  for (const url of urls) {
-    try {
-      const r = await fetch(url)
-      if (!r.ok) continue
-      const blob = await r.blob()
-      if (!blob.type.startsWith('image/')) continue
-      return await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = e => resolve(e.target.result)
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      })
-    } catch { continue }
-  }
-  throw new Error(`Could not load image ${fileId}`)
+  // Use thumbnail URL — no CORS issues, works in browser
+  // sz=w1600 gives high enough quality for planning
+  const thumbUrl = `https://lh3.googleusercontent.com/d/${fileId}=w1600`
+  
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      // Draw to canvas to get base64
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+      try {
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      } catch {
+        // If canvas tainted, just use the URL directly as dataUrl substitute
+        resolve(thumbUrl)
+      }
+    }
+    img.onerror = () => {
+      // Fallback to drive thumbnail
+      const fallback = `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`
+      const img2 = new Image()
+      img2.onload = () => resolve(fallback)
+      img2.onerror = () => reject(new Error(`Cannot load image ${fileId}`))
+      img2.src = fallback
+    }
+    img.src = thumbUrl
+  })
 }
 
 function getImageDimensions(dataUrl) {
