@@ -1,4 +1,3 @@
-cat > ~/Downloads/kss-v2/src/hooks/useDriveImport.js << 'ENDOFFILE'
 import { useState, useCallback } from 'react'
 import { getImageOrientation } from '../store.jsx'
 
@@ -38,16 +37,26 @@ async function fetchFolderImages(folderId, apiKey) {
 }
 
 async function loadDriveImage(fileId, apiKey) {
-  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`Failed to load image: ${r.status}`)
-  const blob = await r.blob()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = e => resolve(e.target.result)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
+  // Try API download first, fall back to thumbnail
+  const urls = [
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`,
+    `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`,
+  ]
+  for (const url of urls) {
+    try {
+      const r = await fetch(url)
+      if (!r.ok) continue
+      const blob = await r.blob()
+      if (!blob.type.startsWith('image/')) continue
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = e => resolve(e.target.result)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    } catch { continue }
+  }
+  throw new Error(`Could not load image ${fileId}`)
 }
 
 function getImageDimensions(dataUrl) {
@@ -85,12 +94,14 @@ export function useDriveImport({ apiKey, onImport, showToast }) {
     if (!folders.length) { showToast('Add at least one folder first'); return }
     setLoading(true)
     const allImages = []
+
     for (const folder of folders) {
       setProgress(`Scanning folder…`)
       setFolders(prev => prev.map(f => f.id === folder.id ? { ...f, status: 'loading' } : f))
       try {
         const files = await fetchFolderImages(folder.id, apiKey)
-        const batchSize = 5
+        setProgress(`Found ${files.length} images — loading…`)
+        const batchSize = 3
         for (let i = 0; i < files.length; i += batchSize) {
           const batch = files.slice(i, i + batchSize)
           setProgress(`Loading ${i + 1}–${Math.min(i + batchSize, files.length)} of ${files.length}…`)
@@ -111,20 +122,26 @@ export function useDriveImport({ apiKey, onImport, showToast }) {
           )
           results.forEach(r => { if (r.status === 'fulfilled') allImages.push(r.value) })
         }
-        setFolders(prev => prev.map(f => f.id === folder.id ? { ...f, status: 'done', count: files.length } : f))
+        setFolders(prev => prev.map(f =>
+          f.id === folder.id ? { ...f, status: 'done', count: allImages.length } : f
+        ))
       } catch (e) {
-        setFolders(prev => prev.map(f => f.id === folder.id ? { ...f, status: 'error', error: e.message } : f))
+        setFolders(prev => prev.map(f =>
+          f.id === folder.id ? { ...f, status: 'error', error: e.message } : f
+        ))
         showToast(`Error: ${e.message}`)
       }
     }
+
     setLoading(false)
     setProgress('')
     if (allImages.length) {
       onImport(allImages)
       showToast(`${allImages.length} images loaded ✓`)
+    } else {
+      showToast('No images could be loaded — check folder sharing settings')
     }
   }, [apiKey, folders, onImport, showToast])
 
   return { folders, folderInput, setFolderInput, addFolder, removeFolder, browseAll, loading, progress }
 }
-ENDOFFILE
