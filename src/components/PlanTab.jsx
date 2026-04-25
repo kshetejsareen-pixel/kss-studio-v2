@@ -17,7 +17,7 @@ const POST_FORMATS = [
 ]
 
 function makeEmptyPost() {
-  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50, formatOverride: null }
+  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50, formatOverride: null, rotate: 0, flipH: false, flipV: false }
 }
 
 function getCellRatio(post, globalSize) {
@@ -26,6 +26,14 @@ function getCellRatio(post, globalSize) {
     if (f && f.w) return `${f.w}/${f.h}`
   }
   return `${globalSize.w}/${globalSize.h}`
+}
+
+function getImgTransform(post) {
+  const parts = []
+  if (post.rotate) parts.push(`rotate(${post.rotate}deg)`)
+  if (post.flipH)  parts.push('scaleX(-1)')
+  if (post.flipV)  parts.push('scaleY(-1)')
+  return parts.length ? parts.join(' ') : 'none'
 }
 
 export default function PlanTab({ showToast, onTabChange }) {
@@ -39,7 +47,7 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [imageTab, setImageTab]     = useState('all')
   const [gridScale, setGridScale]   = useState(1)
   const [thumbScale, setThumbScale] = useState(1)
-  const [panModeIdx, setPanModeIdx] = useState(null)
+  const [panModeIdx, setPanModeIdx] = useState(null)  // { postIdx, slideIdx } or null
   const panDrag = useRef(null)
 
   const imgByIdx = useCallback(idx => {
@@ -134,21 +142,52 @@ export default function PlanTab({ showToast, onTabChange }) {
 
   const handleDoubleClick = useCallback((e, idx) => {
     e.stopPropagation()
-    if (panModeIdx === idx) { setPanModeIdx(null); showToast('Pan mode off') }
-    else { setPanModeIdx(idx); showToast('Pan mode — drag to reposition') }
+    // Toggle pan mode for cover (slideIdx = null)
+    if (panModeIdx?.postIdx === idx && panModeIdx?.slideIdx === null) {
+      setPanModeIdx(null); showToast('Pan mode off')
+    } else {
+      setPanModeIdx({ postIdx: idx, slideIdx: null }); showToast('Pan mode — drag to reposition · dbl-click to exit')
+    }
+  }, [panModeIdx, showToast])
+
+  const handleSlideDblClick = useCallback((e, postIdx, slideIdx) => {
+    e.stopPropagation()
+    if (panModeIdx?.postIdx === postIdx && panModeIdx?.slideIdx === slideIdx) {
+      setPanModeIdx(null); showToast('Pan mode off')
+    } else {
+      setPanModeIdx({ postIdx, slideIdx }); showToast('Pan mode — drag slide to reposition · dbl-click to exit')
+    }
   }, [panModeIdx, showToast])
 
   const startPan = useCallback((e, idx) => {
-    if (panModeIdx !== idx) return
+    if (panModeIdx?.postIdx !== idx || panModeIdx?.slideIdx !== null) return
     e.preventDefault(); e.stopPropagation()
-    panDrag.current = { idx, startX: e.clientX, startY: e.clientY, startPanX: state.plan[idx]?.panX || 50, startPanY: state.plan[idx]?.panY || 50, rect: e.currentTarget.getBoundingClientRect() }
+    panDrag.current = { postIdx: idx, slideIdx: null, startX: e.clientX, startY: e.clientY, startPanX: state.plan[idx]?.panX || 50, startPanY: state.plan[idx]?.panY || 50, rect: e.currentTarget.getBoundingClientRect() }
+  }, [panModeIdx, state.plan])
+
+  const startSlidePan = useCallback((e, postIdx, slideIdx) => {
+    if (panModeIdx?.postIdx !== postIdx || panModeIdx?.slideIdx !== slideIdx) return
+    e.preventDefault(); e.stopPropagation()
+    const p = state.plan[postIdx]
+    const transforms = p.slideTransforms || {}
+    const t = transforms[slideIdx] || { panX: 50, panY: 50 }
+    panDrag.current = { postIdx, slideIdx, startX: e.clientX, startY: e.clientY, startPanX: t.panX, startPanY: t.panY, rect: e.currentTarget.getBoundingClientRect() }
   }, [panModeIdx, state.plan])
 
   const handleMouseMove = useCallback((e) => {
     if (!panDrag.current) return
-    const { idx, startX, startY, startPanX, startPanY, rect } = panDrag.current
-    setPlanItem(idx, { panX: Math.max(0, Math.min(100, startPanX - (e.clientX - startX) / rect.width * 100)), panY: Math.max(0, Math.min(100, startPanY - (e.clientY - startY) / rect.height * 100)) })
-  }, [setPlanItem])
+    const { postIdx, slideIdx, startX, startY, startPanX, startPanY, rect } = panDrag.current
+    const newPanX = Math.max(0, Math.min(100, startPanX - (e.clientX - startX) / rect.width * 100))
+    const newPanY = Math.max(0, Math.min(100, startPanY - (e.clientY - startY) / rect.height * 100))
+    if (slideIdx === null) {
+      setPlanItem(postIdx, { panX: newPanX, panY: newPanY })
+    } else {
+      const p = state.plan[postIdx]
+      const transforms = { ...(p.slideTransforms || {}) }
+      transforms[slideIdx] = { panX: newPanX, panY: newPanY }
+      setPlanItem(postIdx, { slideTransforms: transforms })
+    }
+  }, [setPlanItem, state.plan])
 
   const handleMouseUp = useCallback(() => { panDrag.current = null }, [])
 
@@ -257,7 +296,7 @@ export default function PlanTab({ showToast, onTabChange }) {
                   const isEmpty = !img
                   const igNum = state.plan.length - i
                   const slides = p.slides?.length || 1
-                  const isPanMode = panModeIdx === i
+                  const isPanMode = panModeIdx?.postIdx === i && panModeIdx?.slideIdx === null
                   const isInspected = inspectIdx === i
                   const borderColor = isInspected ? 'var(--silver)' : isPanMode ? 'var(--silver)' : dragOver === i ? 'var(--silver)' : 'var(--border)'
                   return (
@@ -279,7 +318,7 @@ export default function PlanTab({ showToast, onTabChange }) {
                         </div>
                       ) : (
                         <>
-                          <img src={img.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', objectPosition: `${p.panX || 50}% ${p.panY || 50}%` }} />
+                          <img src={img.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', objectPosition: `${p.panX || 50}% ${p.panY || 50}%`, transform: getImgTransform(p) }} />
                           {p.locked && <span style={{ position: 'absolute', top: 3, left: 3, fontSize: 9 }}>🔒</span>}
                           <div style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(0,0,0,.7)', color: 'var(--silver)', fontSize: 7, padding: '1px 4px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>
                             {p.type}{p.type === 'carousel' && slides > 1 ? ` ▤${slides}` : ''}
@@ -389,19 +428,50 @@ export default function PlanTab({ showToast, onTabChange }) {
               </div>
             </div>
 
+            {/* Rotate + flip */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>Transform</div>
+              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                {[
+                  ['↺ 90°', () => setPlanItem(inspectIdx, { rotate: ((inspectedPost.rotate || 0) - 90 + 360) % 360 })],
+                  ['↻ 90°', () => setPlanItem(inspectIdx, { rotate: ((inspectedPost.rotate || 0) + 90) % 360 })],
+                  ['⇔ Flip H', () => setPlanItem(inspectIdx, { flipH: !inspectedPost.flipH })],
+                  ['⇕ Flip V', () => setPlanItem(inspectIdx, { flipV: !inspectedPost.flipV })],
+                  ['Reset', () => setPlanItem(inspectIdx, { rotate: 0, flipH: false, flipV: false, panX: 50, panY: 50 })],
+                ].map(([label, action]) => (
+                  <button key={label} onClick={action}
+                    style={{ padding: '3px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: 'none', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text2)', cursor: 'pointer' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Slides */}
             {inspectedPost.slides?.length > 0 && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>Slides ({inspectedPost.slides.length})</div>
+                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>
+                  Slides ({inspectedPost.slides.length}) · dbl-click to pan
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4 }}>
                   {inspectedPost.slides.map((idx, si) => {
                     const sImg = imgByIdx(idx)
+                    const transforms = inspectedPost.slideTransforms || {}
+                    const t = transforms[si] || { panX: 50, panY: 50 }
+                    const isSlidePanMode = panModeIdx?.postIdx === inspectIdx && panModeIdx?.slideIdx === si
                     return (
-                      <div key={si} style={{ position: 'relative', aspectRatio: '1', borderRadius: 2, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                        {sImg && <img src={sImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      <div key={si} style={{ position: 'relative', aspectRatio: '1', borderRadius: 2, overflow: 'hidden', border: `1px solid ${isSlidePanMode ? 'var(--silver)' : 'var(--border)'}`, cursor: isSlidePanMode ? 'grab' : 'pointer' }}
+                        onDoubleClick={e => handleSlideDblClick(e, inspectIdx, si)}
+                        onMouseDown={e => startSlidePan(e, inspectIdx, si)}>
+                        {sImg && <img src={sImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${t.panX}% ${t.panY}%` }} />}
                         <div style={{ position: 'absolute', top: 2, left: 2, background: 'rgba(0,0,0,.7)', color: 'var(--silver)', fontSize: 7, padding: '1px 3px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>{si + 1}</div>
-                        {inspectedPost.slides.length > 1 && (
-                          <button onClick={() => removeSlide(inspectIdx, si)} style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(138,58,58,.85)', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                        {isSlidePanMode && (
+                          <div style={{ position: 'absolute', inset: 0, border: '1px solid var(--silver)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.3)', pointerEvents: 'none' }}>
+                            <span style={{ fontSize: 7, color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>drag</span>
+                          </div>
+                        )}
+                        {!isSlidePanMode && inspectedPost.slides.length > 1 && (
+                          <button onClick={e => { e.stopPropagation(); removeSlide(inspectIdx, si) }} style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(138,58,58,.85)', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
                         )}
                       </div>
                     )
