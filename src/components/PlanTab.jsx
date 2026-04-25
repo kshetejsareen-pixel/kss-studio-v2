@@ -170,9 +170,22 @@ export default function PlanTab({ showToast, onTabChange }) {
     setPlanItem(planIdx, { slides, imageIndex: slides[0], type: slides.length === 1 ? 'single' : 'carousel' })
   }, [state.plan, setPlanItem, showToast])
 
-  // ── Image pan (Alt+drag) ──
+  // ── Image pan — double-click to enter pan mode, drag to reposition ──
+  const [panModeIdx, setPanModeIdx] = useState(null) // which cell is in pan mode
+
+  const handleDoubleClick = useCallback((e, idx) => {
+    e.stopPropagation()
+    if (panModeIdx === idx) {
+      setPanModeIdx(null) // exit pan mode
+      showToast('Pan mode off')
+    } else {
+      setPanModeIdx(idx) // enter pan mode
+      showToast('Pan mode — drag to reposition · double-click to exit')
+    }
+  }, [panModeIdx, showToast])
+
   const startPan = useCallback((e, idx) => {
-    if (!e.altKey) return
+    if (panModeIdx !== idx) return // only pan if in pan mode
     e.preventDefault()
     e.stopPropagation()
     panDrag.current = {
@@ -182,7 +195,7 @@ export default function PlanTab({ showToast, onTabChange }) {
       startPanY: state.plan[idx]?.panY || 50,
       rect: e.currentTarget.getBoundingClientRect(),
     }
-  }, [state.plan])
+  }, [panModeIdx, state.plan])
 
   // Global mouse move/up for pan
   const handleMouseMove = useCallback((e) => {
@@ -278,13 +291,20 @@ export default function PlanTab({ showToast, onTabChange }) {
         {/* Secondary actions */}
         <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => {
-            const data = JSON.stringify(state.plan, null, 2)
+            // Export plan with image names for reliable reimport
+            const exportData = state.plan.map(p => ({
+              ...p,
+              // Store image names alongside indices for filename-based matching on reimport
+              imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '',
+              slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || ''),
+            }))
             const a = document.createElement('a')
-            a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }))
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' }))
             a.download = 'KSS-Plan.json'
             a.click()
             showToast('Plan exported ✓')
           }}>↓ Export</button>
+
           <button className="btn btn-ghost btn-sm" onClick={() => {
             const input = document.createElement('input')
             input.type = 'file'
@@ -297,9 +317,40 @@ export default function PlanTab({ showToast, onTabChange }) {
                 try {
                   const parsed = JSON.parse(ev.target.result)
                   if (!Array.isArray(parsed)) { showToast('Invalid plan file'); return }
-                  resetPlan(parsed.map(p => ({ ...makeEmptyPost(), ...p, date: '', time: '' })))
-                  showToast(`Plan imported — ${parsed.length} posts ✓`)
-                } catch { showToast('Import failed') }
+
+                  // Build filename → index map from currently loaded images
+                  const nameToIdx = {}
+                  state.images.forEach((img, i) => { nameToIdx[img.name] = i + 1 })
+
+                  const restored = parsed.map(p => {
+                    const post = { ...makeEmptyPost(), ...p, date: '', time: '' }
+
+                    // Match cover by filename first, fall back to stored index
+                    if (p.imageName && nameToIdx[p.imageName]) {
+                      post.imageIndex = nameToIdx[p.imageName]
+                    } else if (p.imageIndex && p.imageIndex <= state.images.length) {
+                      post.imageIndex = p.imageIndex
+                    } else {
+                      post.imageIndex = null
+                    }
+
+                    // Match slides by filename
+                    if (p.slideNames?.length) {
+                      post.slides = p.slideNames
+                        .map(name => nameToIdx[name])
+                        .filter(Boolean)
+                      if (post.slides.length === 0) post.slides = post.imageIndex ? [post.imageIndex] : []
+                    } else if (post.imageIndex) {
+                      post.slides = [post.imageIndex]
+                    }
+
+                    return post
+                  })
+
+                  resetPlan(restored)
+                  const matched = restored.filter(p => p.imageIndex).length
+                  showToast(`Plan imported — ${restored.length} posts, ${matched} images matched ✓`)
+                } catch (err) { showToast('Import failed: ' + err.message) }
               }
               reader.readAsText(file)
             }
@@ -353,15 +404,19 @@ export default function PlanTab({ showToast, onTabChange }) {
                 return (
                   <div
                     key={i}
-                    className={`plan-cell ${isEmpty ? 'empty' : ''} ${isInspected ? 'inspected' : ''} ${p.locked ? 'locked' : ''} ${dragOver === i ? 'drag-over' : ''}`}
-                    style={{ aspectRatio: `${size.w}/${size.h}` }}
+                    className={`plan-cell ${isEmpty ? 'empty' : ''} ${isInspected ? 'inspected' : ''} ${p.locked ? 'locked' : ''} ${dragOver === i ? 'drag-over' : ''} ${panModeIdx === i ? 'pan-mode' : ''}`}
+                    style={{
+                      aspectRatio: `${size.w}/${size.h}`,
+                      cursor: panModeIdx === i ? 'grab' : undefined,
+                    }}
                     draggable={!isEmpty && !p.locked}
                     onDragStart={e => { e.dataTransfer.setData('plan-cell-idx', i); e.currentTarget.style.opacity = '.4' }}
                     onDragEnd={e => e.currentTarget.style.opacity = '1'}
                     onDragOver={e => { e.preventDefault(); setDragOver(i) }}
                     onDragLeave={() => setDragOver(null)}
                     onDrop={e => handleCellDrop(e, i)}
-                    onClick={() => !isEmpty && setInspectIdx(i)}
+                    onClick={() => !isEmpty && panModeIdx !== i && setInspectIdx(i)}
+                    onDoubleClick={e => !isEmpty && handleDoubleClick(e, i)}
                     onMouseDown={e => !isEmpty && startPan(e, i)}
                     title={isEmpty ? `Slot ${igNum} — drag image here` : `Post #${igNum} · click to inspect · alt+drag to pan`}
                   >
@@ -387,6 +442,21 @@ export default function PlanTab({ showToast, onTabChange }) {
                           {p.type}{p.type === 'carousel' && slides > 1 ? ` ▤${slides}` : ''}
                         </div>
                         {!p.caption && <div className="cell-no-cap">no cap</div>}
+                        {panModeIdx === i && (
+                          <div style={{
+                            position: 'absolute', inset: 0,
+                            border: '2px solid var(--silver)',
+                            borderRadius: 'var(--r)',
+                            pointerEvents: 'none',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <div style={{
+                              background: 'rgba(0,0,0,.7)', color: 'var(--silver)',
+                              fontSize: 9, padding: '3px 8px', borderRadius: 10,
+                              fontFamily: 'var(--font-mono)',
+                            }}>drag to pan · dbl-click to exit</div>
+                          </div>
+                        )}
                         <div className="cell-overlay">
                           <div className="cell-meta">#{igNum} · {p.theme || p.type}</div>
                           <div className="cell-actions">

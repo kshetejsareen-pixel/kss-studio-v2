@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { StoreProvider, useStore, claudeResearch, readFileAsDataUrl, getImageDimensions, getImageOrientation } from './store.jsx'
 import { useToast } from './hooks/useToast.js'
 import DriveModal from './components/DriveModal.jsx'
@@ -26,6 +26,25 @@ function AppInner() {
   const { toast, showToast } = useToast()
   const syncTimer = useRef(null)
 
+  // ── Load saved state on startup ──
+  useEffect(() => {
+    try {
+      const savedSettings = localStorage.getItem('kss_settings')
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings)
+        // Merge each key individually so new fields get defaults
+        Object.entries(parsed).forEach(([k, v]) => setSettings({ [k]: v }))
+      }
+      const savedContext = localStorage.getItem('kss_global_context')
+      if (savedContext) {
+        setContextDraft(savedContext)
+        set('globalContext', savedContext)
+      }
+    } catch (e) {
+      console.warn('Failed to load saved state:', e)
+    }
+  }, []) // eslint-disable-line
+
   // ── Context bar ──
   const handleContextChange = (val) => {
     setContextDraft(val)
@@ -33,6 +52,7 @@ function AppInner() {
     clearTimeout(syncTimer.current)
     syncTimer.current = setTimeout(() => {
       set('globalContext', val)
+      localStorage.setItem('kss_global_context', val)
       setSynced(true)
     }, 600)
   }
@@ -161,34 +181,56 @@ function AppInner() {
                 </button>
               </div>
 
-              {/* Image grid */}
-              {state.images.length > 0 && (
-                <>
-                  <div className="img-grid" style={{ marginTop: 10 }}>
-                    {state.images.map(img => (
-                      <div
-                        key={img.id}
-                        className={`img-thumb ${state.selected.includes(img.id) ? 'selected' : ''}`}
-                        draggable
-                        onDragStart={e => {
-                          e.dataTransfer.setData('sidebar-img-id', img.id)
-                          e.currentTarget.style.opacity = '.5'
-                        }}
-                        onDragEnd={e => e.currentTarget.style.opacity = '1'}
-                        title={`${img.name} · ${img.orientation} · drag to plan grid`}
-                      >
-                        <img src={img.dataUrl} alt={img.name} loading="lazy" />
-                        {img.orientation !== 'portrait' && (
-                          <span className={`orient-badge ${img.orientation}`}>
-                            {img.orientation === 'landscape' ? 'L' : 'S'}
-                          </span>
-                        )}
-                      </div>
-                    ))}
+              {/* Image grid — grouped by orientation */}
+              {state.images.length > 0 && (() => {
+                const portraits  = state.images.filter(i => i.orientation === 'portrait')
+                const landscapes = state.images.filter(i => i.orientation === 'landscape')
+                const squares    = state.images.filter(i => i.orientation === 'square')
+
+                const renderGroup = (imgs, label, badge) => imgs.length === 0 ? null : (
+                  <div key={label} style={{ marginTop: 10 }}>
+                    <div style={{
+                      fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase',
+                      color: 'var(--mute)', fontFamily: 'var(--font-mono)',
+                      marginBottom: 5, display: 'flex', justifyContent: 'space-between'
+                    }}>
+                      <span>{label}</span>
+                      <span style={{ color: 'var(--mute2)' }}>{imgs.length}</span>
+                    </div>
+                    <div className="img-grid">
+                      {imgs.map(img => (
+                        <div
+                          key={img.id}
+                          className={`img-thumb ${state.selected.includes(img.id) ? 'selected' : ''}`}
+                          draggable
+                          onDragStart={e => {
+                            e.dataTransfer.setData('sidebar-img-id', img.id)
+                            e.currentTarget.style.opacity = '.5'
+                          }}
+                          onDragEnd={e => e.currentTarget.style.opacity = '1'}
+                          title={`${img.name} · drag to plan grid`}
+                        >
+                          <img src={img.dataUrl} alt={img.name} loading="lazy" />
+                          {badge && (
+                            <span className={`orient-badge ${img.orientation}`}>{badge}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="img-count">{state.images.length} loaded</div>
-                </>
-              )}
+                )
+
+                return (
+                  <>
+                    {renderGroup(portraits, 'Portrait', null)}
+                    {renderGroup(landscapes, 'Landscape', 'L')}
+                    {renderGroup(squares, 'Square', 'S')}
+                    <div className="img-count" style={{ marginTop: 8 }}>
+                      {state.images.length} total · {portraits.length}P · {landscapes.length}L{squares.length ? ` · ${squares.length}S` : ''}
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </aside>
 

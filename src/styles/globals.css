@@ -871,3 +871,6 @@ a { color: var(--silver); text-decoration: none; }
   .nav-tabs { display: none; }
   .topbar { padding: 0 16px; }
 }
+
+.plan-cell.pan-mode { outline: 2px solid var(--silver); outline-offset: -2px; cursor: grab !important; }
+.plan-cell.pan-mode:active { cursor: grabbing !important; }
