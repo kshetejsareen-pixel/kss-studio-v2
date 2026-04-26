@@ -30,11 +30,13 @@ export default function StudioTab({ showToast }) {
   const [storyHtml, setStoryHtml]         = useState('')
   const [iterations, setIterations]       = useState([])
   const [zoom, setZoom]                   = useState(1)
-  const canvasRef = useRef(null)
+  const [filmSize, setFilmSize]           = useState(80) // filmstrip frame height px
+  const canvasRef  = useRef(null)
+  const filmRef    = useRef(null)
 
   const selectedImg = state.images.find(i => i.id === selectedImgId) || state.images[0] || null
 
-  // Zoom via wheel
+  // Zoom via wheel on canvas
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
@@ -54,6 +56,13 @@ export default function StudioTab({ showToast }) {
     setRefImgDataUrl(dataUrl)
     showToast('Reference image loaded ✓')
   }
+
+  // Scroll filmstrip to selected image
+  useEffect(() => {
+    if (!selectedImg || !filmRef.current) return
+    const el = filmRef.current.querySelector(`[data-id="${selectedImg.id}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }, [selectedImg?.id])
 
   const generate = useCallback(async () => {
     const key = state.settings.anthropicKey
@@ -114,49 +123,66 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
         setStoryHtml(html)
       } else {
         setDesignHtml(html)
-        setIterations(prev => [{ html, prompt: stylePrompt || 'default', ts: Date.now() }, ...prev].slice(0, 5))
+        setIterations(prev => [{ html, prompt: stylePrompt || 'default', ts: Date.now() }, ...prev].slice(0, 8))
       }
       showToast('Design generated ✓ — scroll to zoom')
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setGenerating(false) }
   }, [state, selectedImg, mode, stylePrompt, refImgDataUrl, showToast])
 
-  const currentHtml = mode === 'story' ? storyHtml : designHtml
-  const canvasDims  = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 }
-  const containerH  = 520
-  const containerW  = 340
-  const fitScale    = Math.min(containerH / canvasDims.h, containerW / canvasDims.w) * 0.92
+  const currentHtml  = mode === 'story' ? storyHtml : designHtml
+  const canvasDims   = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 }
+  const containerH   = 460
+  const containerW   = 360
+  const fitScale     = Math.min(containerH / canvasDims.h, containerW / canvasDims.w) * 0.92
   const displayScale = fitScale * zoom
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 20, padding: 24, height: '100%', overflow: 'auto' }}>
+  // Filmstrip frame width based on height and image orientation
+  const getFrameW = (img) => {
+    if (!img) return filmSize * 0.75
+    const ratio = img.width && img.height ? img.width / img.height : 0.75
+    return Math.round(filmSize * ratio)
+  }
 
-      {/* CANVAS */}
-      <div>
-        <div style={{ display: 'flex', gap: 4, marginBottom: 12, alignItems: 'center' }}>
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 288px', gap: 0, height: '100%', overflow: 'hidden' }}>
+
+      {/* ── LEFT: CANVAS + FILMSTRIP ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)' }}>
+
+        {/* Mode tabs + zoom */}
+        <div style={{ display: 'flex', gap: 4, padding: '12px 16px 8px', alignItems: 'center', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
           {['post', 'story'].map(m => (
             <button key={m} onClick={() => { setMode(m); setZoom(1) }}
-              style={{ padding: '6px 16px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+              style={{ padding: '5px 14px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
               {m === 'post' ? 'Post 4:5' : 'Story 9:16'}
             </button>
           ))}
           {currentHtml && (
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
-              <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>zoom</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>−</button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
+              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(1)))}>−</button>
               <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 32, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(4, z + 0.1))}>+</button>
+              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(4, +(z + 0.1).toFixed(1)))}>+</button>
               <button className="btn btn-ghost btn-xs" onClick={() => setZoom(1)}>fit</button>
             </div>
           )}
         </div>
 
-        <div ref={canvasRef}
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-2)', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', minHeight: containerH, padding: 20 }}>
+        {/* Canvas */}
+        <div ref={canvasRef} style={{ flex: 1, background: '#0A0A0A', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20 }}>
           {!currentHtml ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: containerH - 40, gap: 10, color: 'var(--text-3)', width: '100%' }}>
-              <div style={{ fontSize: 36, opacity: .12 }}>◫</div>
-              <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Select image · add style direction · Generate</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%', minHeight: containerH }}>
+              {selectedImg ? (
+                <>
+                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: containerH - 60, maxWidth: '80%', objectFit: 'contain', opacity: .3, borderRadius: 4 }} />
+                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Add style direction → Generate</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 40, opacity: .08 }}>◫</div>
+                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Select image from filmstrip below</div>
+                </>
+              )}
             </div>
           ) : (
             <div style={{ transformOrigin: 'top center', transform: `scale(${displayScale})`, width: canvasDims.w, height: canvasDims.h, flexShrink: 0 }}
@@ -164,15 +190,73 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
           )}
         </div>
 
+        {/* ── FILMSTRIP ── */}
+        <div style={{ flexShrink: 0, background: '#050505', borderTop: '2px solid #1A1A1A' }}>
+          {/* Filmstrip toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', gap: 8, borderBottom: '1px solid #1A1A1A' }}>
+            <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
+              {state.images.length} image{state.images.length !== 1 ? 's' : ''}
+            </span>
+            {selectedImg && (
+              <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                · {selectedImg.name}
+              </span>
+            )}
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 'auto' }}>
+              <button
+                onClick={() => setFilmSize(s => Math.max(48, s - 16))}
+                style={{ width: 20, height: 20, background: 'none', border: '1px solid #2A2A2A', borderRadius: 2, color: '#666', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>−</button>
+              <span style={{ fontSize: 8, color: '#555', fontFamily: 'var(--font-mono)', minWidth: 24, textAlign: 'center' }}>{filmSize}px</span>
+              <button
+                onClick={() => setFilmSize(s => Math.min(160, s + 16))}
+                style={{ width: 20, height: 20, background: 'none', border: '1px solid #2A2A2A', borderRadius: 2, color: '#666', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>+</button>
+            </div>
+          </div>
+
+          {/* Filmstrip frames */}
+          <div ref={filmRef}
+            style={{ display: 'flex', gap: 3, overflowX: 'auto', overflowY: 'hidden', padding: '8px 12px', height: filmSize + 24, alignItems: 'center', scrollbarWidth: 'thin', scrollbarColor: '#2A2A2A transparent' }}>
+            {state.images.length === 0 ? (
+              <div style={{ fontSize: 10, color: '#333', fontFamily: 'var(--font-mono)', paddingLeft: 8 }}>Upload images to begin</div>
+            ) : state.images.map(img => {
+              const isSelected = selectedImg?.id === img.id
+              const frameW = getFrameW(img)
+              return (
+                <div key={img.id} data-id={img.id}
+                  onClick={() => setSelectedImgId(img.id)}
+                  style={{
+                    width: frameW, height: filmSize, flexShrink: 0,
+                    borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
+                    border: `2px solid ${isSelected ? 'var(--silver)' : 'transparent'}`,
+                    outline: isSelected ? '1px solid rgba(200,200,204,.2)' : 'none',
+                    outlineOffset: 2,
+                    position: 'relative',
+                    transition: 'border-color .12s',
+                    boxShadow: isSelected ? '0 0 12px rgba(200,200,204,.15)' : 'none',
+                  }}>
+                  <img src={img.dataUrl} alt={img.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+                  {isSelected && (
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--silver)' }} />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Iterations strip */}
         {iterations.length > 1 && mode === 'post' && (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 6, letterSpacing: '.1em', textTransform: 'uppercase' }}>Previous iterations</div>
-            <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ flexShrink: 0, background: '#080808', borderTop: '1px solid var(--border)', padding: '8px 12px' }}>
+            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 6, letterSpacing: '.1em', textTransform: 'uppercase' }}>
+              Previous iterations ({iterations.length - 1})
+            </div>
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
               {iterations.slice(1).map((iter, i) => (
                 <div key={i}
-                  style={{ width: 48, aspectRatio: '4/5', borderRadius: 2, overflow: 'hidden', cursor: 'pointer', border: '1px solid var(--border)', flexShrink: 0, position: 'relative' }}
+                  style={{ width: 40, aspectRatio: '4/5', borderRadius: 2, overflow: 'hidden', cursor: 'pointer', border: '1px solid var(--border)', flexShrink: 0, position: 'relative' }}
                   onClick={() => { setDesignHtml(iter.html); setZoom(1) }} title={iter.prompt}>
-                  <div style={{ transform: `scale(${48/1080})`, transformOrigin: 'top left', width: 1080, height: 1350, pointerEvents: 'none' }}
+                  <div style={{ transform: `scale(${40/1080})`, transformOrigin: 'top left', width: 1080, height: 1350, pointerEvents: 'none' }}
                     dangerouslySetInnerHTML={{ __html: iter.html }} />
                 </div>
               ))}
@@ -181,48 +265,51 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
         )}
       </div>
 
-      {/* CONTROLS */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* ── RIGHT: CONTROLS ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', background: 'var(--bg-raised)' }}>
 
-        <div className="card" style={{ padding: 12 }}>
-          <div className="field-label" style={{ marginBottom: 8 }}>Subject Image</div>
-          {state.images.length === 0 ? (
-            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>No images loaded</div>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 140, overflowY: 'auto' }}>
-              {state.images.map(img => (
-                <div key={img.id} onClick={() => setSelectedImgId(img.id)}
-                  style={{ width: 38, height: 38, borderRadius: 2, overflow: 'hidden', cursor: 'pointer', border: `2px solid ${selectedImg?.id === img.id ? 'var(--silver)' : 'transparent'}`, flexShrink: 0, transition: 'border-color .15s' }}>
-                  <img src={img.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Selected image preview */}
+        {selectedImg && (
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ width: 52, height: 52, borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
+                <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
+                <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                  {selectedImg.width && selectedImg.height ? `${selectedImg.width}×${selectedImg.height}` : ''} · {selectedImg.orientation || ''}
                 </div>
-              ))}
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="card" style={{ padding: 12 }}>
-          <div className="field-label" style={{ marginBottom: 4 }}>Reference Image <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(optional)</span></div>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 8 }}>Upload a design you love — Claude matches its style</div>
+        {/* Reference image */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <div className="field-label" style={{ marginBottom: 4 }}>Reference <span style={{ color: 'var(--text-3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></div>
+          <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 8, fontFamily: 'var(--font-mono)' }}>Upload a design — Claude matches its style</div>
           {refImgDataUrl ? (
             <div style={{ position: 'relative', display: 'inline-block' }}>
-              <img src={refImgDataUrl} alt="ref" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--silver-edge)', display: 'block' }} />
+              <img src={refImgDataUrl} alt="ref" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 'var(--r)', border: '1px solid var(--silver-edge)', display: 'block' }} />
               <button onClick={() => setRefImgDataUrl(null)}
-                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: 'var(--surface-3)', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                style={{ position: 'absolute', top: -5, right: -5, width: 16, height: 16, borderRadius: '50%', background: '#1A1A1A', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
           ) : (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
               <input type="file" accept="image/*" onChange={handleRefImg} style={{ display: 'none' }} />
               ↑ Upload reference
             </label>
           )}
         </div>
 
-        <div className="card" style={{ padding: 12 }}>
+        {/* Style direction */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', flex: 1 }}>
           <div className="field-label" style={{ marginBottom: 6 }}>Style Direction</div>
           <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
             rows={3} placeholder="e.g. Dark moody, silver type, Syne&#10;Or leave blank — AI decides"
-            style={{ fontSize: 11, resize: 'none' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+            style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {[
               ['Dark editorial', 'Dark moody overlay, silver/white typography, Syne font, minimal text, handle bottom right'],
               ['Clean minimal',  'Clean white overlay bottom, black sans-serif, image dominant, subtle branding'],
@@ -238,24 +325,26 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
           </div>
         </div>
 
-        <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
-          {generating ? <><span className="spin" /> Generating…</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
-        </button>
-
-        {currentHtml && (
-          <button className="btn btn-ghost btn-full" disabled={exporting}
-            onClick={async () => {
-              setExporting(true)
-              try {
-                const handle = state.settings.handle?.replace('@','') || 'KSS'
-                await exportPng(currentHtml, canvasDims.w, canvasDims.h, `${handle}-${mode}-${Date.now()}.png`)
-                showToast('PNG exported ✓')
-              } catch(e) { showToast('Export failed: ' + e.message) }
-              finally { setExporting(false) }
-            }}>
-            {exporting ? <><span className="spin" /> Exporting…</> : '↓ Export PNG'}
+        {/* Actions */}
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+          <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
+            {generating ? <><span className="spin" /> Generating…</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
           </button>
-        )}
+          {currentHtml && (
+            <button className="btn btn-ghost btn-full" disabled={exporting}
+              onClick={async () => {
+                setExporting(true)
+                try {
+                  const handle = state.settings.handle?.replace('@','') || 'KSS'
+                  await exportPng(currentHtml, canvasDims.w, canvasDims.h, `${handle}-${mode}-${Date.now()}.png`)
+                  showToast('PNG exported ✓')
+                } catch(e) { showToast('Export failed: ' + e.message) }
+                finally { setExporting(false) }
+              }}>
+              {exporting ? <><span className="spin" /> Exporting…</> : '↓ Export PNG'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
