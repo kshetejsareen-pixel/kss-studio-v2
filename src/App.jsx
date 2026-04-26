@@ -216,25 +216,29 @@ function AppInner() {
       </header>
 
       {/* ── BRIEF BAR ── */}
-      <div className="brief-bar">
-        <span className="brief-label">Brief</span>
-        <input
-          className="brief-input"
-          value={contextDraft}
-          onChange={e => handleContextChange(e.target.value)}
-          placeholder="Brand name or project — e.g. RAVOH, luxury furniture, Delhi…"
-        />
-        <span style={{ color: 'var(--text-3)', fontSize: 9, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>·</span>
-        <input
-          style={{ width: 180, flexShrink: 0, background: 'none', border: 'none', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', fontSize: 10, outline: 'none' }}
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="your notes…"
-        />
-        <button className="research-btn" onClick={handleResearch} disabled={researching}>
-          {researching ? <span className="spin" /> : '✦'} Research
-        </button>
-        {synced && contextDraft && <span className="synced-tag">synced</span>}
+      <div className="brief-bar" style={{ flexDirection: 'column', height: 'auto', padding: '6px 20px', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+          <span className="brief-label">Brief</span>
+          <input
+            className="brief-input"
+            value={contextDraft}
+            onChange={e => handleContextChange(e.target.value)}
+            placeholder="Brand name or project — e.g. RAVOH, luxury furniture, Delhi…"
+          />
+          <button className="research-btn" onClick={handleResearch} disabled={researching}>
+            {researching ? <span className="spin" /> : '✦'} Research
+          </button>
+          {synced && contextDraft && <span className="synced-tag">synced</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+          <span className="brief-label" style={{ opacity: .6 }}>Notes</span>
+          <input
+            style={{ flex: 1, background: 'none', border: 'none', color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 10, outline: 'none' }}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Your personal notes — added to caption generation and research…"
+          />
+        </div>
       </div>
 
       {/* ── MAIN ── */}
