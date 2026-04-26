@@ -209,10 +209,10 @@ CRITICAL:
         {/* Canvas */}
         <div ref={canvasRef} style={{ flex: 1, background: '#0A0A0A', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20 }}>
           {!currentHtml ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%', minHeight: containerH }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%', minHeight: 400 }}>
               {selectedImg ? (
                 <>
-                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: containerH - 60, maxWidth: '80%', objectFit: 'contain', opacity: .3, borderRadius: 4 }} />
+                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: canvasSize.h - 60, maxWidth: '80%', objectFit: 'contain', opacity: .3, borderRadius: 4 }} />
                   <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Add style direction → Generate</div>
                 </>
               ) : (
