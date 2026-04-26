@@ -138,22 +138,23 @@ CRITICAL:
       }
 
       if (!raw) throw new Error('Empty response')
-      let html = raw.replace(/```html[\s\S]*?```/g, m => m.replace(/```html\n?/, '').replace(/\n?```/, ''))
-                    .replace(/```/g, '').trim()
 
-      // Comprehensive image injection — Claude uses many different placeholder patterns
+      // Simple clean — strip markdown code fences only
+      let html = raw.trim()
+      if (html.startsWith('```')) {
+        html = html.replace(/^```html?\n?/, '').replace(/\n?```$/, '').trim()
+      }
+
+      // Comprehensive image injection
       const imgData = selectedImg.dataUrl
       html = html
         .replace(/\[IMAGE_SRC\]/g, imgData)
         .replace(/\[SUBJECT_IMAGE\]/g, imgData)
         .replace(/src="placeholder[^"]*"/g, `src="${imgData}"`)
         .replace(/src='placeholder[^']*'/g, `src='${imgData}'`)
-        .replace(/url\(['"]?placeholder[^'")\s]*['"]?\)/g, `url('${imgData}')`)
-        .replace(/url\(['"]?\[IMAGE[^\]]*\]['"]?\)/g, `url('${imgData}')`)
-        .replace(/url\(['"]?YOUR_IMAGE_HERE['"]?\)/g, `url('${imgData}')`)
-        .replace(/url\(['"]?image\.jpg['"]?\)/g, `url('${imgData}')`)
-        .replace(/url\(['"]?photo\.jpg['"]?\)/g, `url('${imgData}')`)
-        .replace(/url\(['"]?background\.jpg['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\("placeholder[^"]*"\)/g, `url("${imgData}")`)
+        .replace(/url\('placeholder[^']*'\)/g, `url('${imgData}')`)
+        .replace(/url\(placeholder[^)]*\)/g, `url("${imgData}")`)
 
       if (isStory) {
         setStoryHtml(html)
