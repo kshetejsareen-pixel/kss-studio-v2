@@ -263,15 +263,29 @@ export default function PlanTab({ showToast, onTabChange }) {
             <button className="btn btn-ghost btn-sm" onClick={() => {
               const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
               input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader()
-                reader.onload = ev => { try { const parsed = JSON.parse(ev.target.result); if (!Array.isArray(parsed)) { showToast('Invalid file'); return }
+                reader.onload = ev => { try {
+                  const parsed = JSON.parse(ev.target.result)
+
+                  // Handle both formats: legacy array OR new session object
+                  const planData = Array.isArray(parsed) ? parsed : parsed.plan
+                  if (!planData || !Array.isArray(planData)) { showToast('Invalid file — no plan data found'); return }
+
+                  // If session object, restore context + queue too
+                  if (!Array.isArray(parsed)) {
+                    if (parsed.globalContext) { set('globalContext', parsed.globalContext); localStorage.setItem('kss_global_context', parsed.globalContext) }
+                    if (parsed.queue) set('queue', parsed.queue)
+                    if (parsed.captionNotes) set('captionNotes', parsed.captionNotes)
+                  }
+
                   const nameToIdx = {}; state.images.forEach((img, i) => { nameToIdx[img.name] = i + 1 })
-                  const restored = parsed.map(p => { const post = { ...makeEmptyPost(), ...p, date: '', time: '' }
+                  const restored = planData.map(p => { const post = { ...makeEmptyPost(), ...p }
                     if (p.imageName && nameToIdx[p.imageName]) post.imageIndex = nameToIdx[p.imageName]
                     else if (p.imageIndex && p.imageIndex <= state.images.length) post.imageIndex = p.imageIndex
                     else post.imageIndex = null
                     if (p.slideNames?.length) { post.slides = p.slideNames.map(n => nameToIdx[n]).filter(Boolean); if (!post.slides.length) post.slides = post.imageIndex ? [post.imageIndex] : [] } else if (post.imageIndex) post.slides = [post.imageIndex]
                     return post })
-                  resetPlan(restored); showToast(`Imported — ${restored.filter(p => p.imageIndex).length} matched`)
+                  resetPlan(restored)
+                  showToast(`Session loaded — ${restored.filter(p => p.imageIndex).length} posts matched ✓`)
                 } catch (err) { showToast('Import failed: ' + err.message) } }; reader.readAsText(file) }; input.click()
             }}>↑ Import</button>
             <div className="row" style={{ gap: 3, marginLeft: 'auto', alignItems: 'center' }}>
