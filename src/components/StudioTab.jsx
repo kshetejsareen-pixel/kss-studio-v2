@@ -31,10 +31,24 @@ export default function StudioTab({ showToast }) {
   const [iterations, setIterations]       = useState([])
   const [zoom, setZoom]                   = useState(1)
   const [filmSize, setFilmSize]           = useState(80) // filmstrip frame height px
+  const [canvasSize, setCanvasSize] = useState({ w: 600, h: 480 })
   const canvasRef  = useRef(null)
   const filmRef    = useRef(null)
 
   const selectedImg = state.images.find(i => i.id === selectedImgId) || state.images[0] || null
+
+  // Measure actual canvas container size
+  useEffect(() => {
+    if (!canvasRef.current) return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        if (width > 0 && height > 0) setCanvasSize({ w: width, h: height })
+      }
+    })
+    ro.observe(canvasRef.current)
+    return () => ro.disconnect()
+  }, [])
 
   // Zoom via wheel on canvas
   useEffect(() => {
@@ -42,7 +56,7 @@ export default function StudioTab({ showToast }) {
     if (!el) return
     const handler = (e) => {
       e.preventDefault()
-      setZoom(z => Math.max(0.2, Math.min(4, z + (e.deltaY < 0 ? 0.1 : -0.1))))
+      setZoom(z => Math.max(0.1, Math.min(4, z + (e.deltaY < 0 ? 0.1 : -0.1))))
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
@@ -132,10 +146,11 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
 
   const currentHtml  = mode === 'story' ? storyHtml : designHtml
   const canvasDims   = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 }
-  const containerH   = 460
-  const containerW   = 360
-  const fitScale     = Math.min(containerH / canvasDims.h, containerW / canvasDims.w) * 0.92
-  const displayScale = fitScale * zoom
+  const fitScale     = Math.min(
+    (canvasSize.h - 40) / canvasDims.h,
+    (canvasSize.w - 40) / canvasDims.w
+  ) * 0.95
+  const displayScale = Math.max(0.05, fitScale * zoom)
 
   // Filmstrip frame width based on height and image orientation
   const getFrameW = (img) => {
@@ -161,7 +176,7 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
           {currentHtml && (
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
               <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(1)))}>−</button>
-              <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 32, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+              <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 36, textAlign: 'center' }}>{Math.round(displayScale * 100)}%</span>
               <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(4, +(z + 0.1).toFixed(1)))}>+</button>
               <button className="btn btn-ghost btn-xs" onClick={() => setZoom(1)}>fit</button>
             </div>
@@ -191,7 +206,7 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
         </div>
 
         {/* ── FILMSTRIP ── */}
-        <div style={{ flexShrink: 0, background: '#050505', borderTop: '2px solid #1A1A1A' }}>
+        <div style={{ flexShrink: 0, background: '#050505', borderTop: '2px solid #1A1A1A', minHeight: filmSize + 48 }}>
           {/* Filmstrip toolbar */}
           <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', gap: 8, borderBottom: '1px solid #1A1A1A' }}>
             <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
