@@ -3,20 +3,25 @@ import { useStore, claudeVision, M_SONNET, exportPng, readFileAsDataUrl, resizeI
 
 const POST_SYSTEM = (handle, context) => `You are a luxury creative director generating Instagram post HTML for ${handle}.
 Context: ${context || 'Luxury commercial photography studio'}
+
 Generate a single self-contained HTML div styled for Instagram. Rules:
 - Inline styles only — no external CSS files
 - Use <style> tag only for @import Google Fonts
-- Div must be exactly the specified dimensions
-- Use the subject image as background or hero element
-- Return ONLY the HTML, no explanation`
+- Div must be exactly the specified dimensions with overflow: hidden
+- The subject image will be injected as a base64 data URL — use src="[IMAGE_SRC]" for <img> tags, or url('[IMAGE_SRC]') for CSS backgrounds
+- NEVER use black as the primary background unless the style explicitly requires it
+- The image must be VISIBLE and DOMINANT — it should cover most of the design
+- Return ONLY the HTML div, no explanation, no markdown`
 
 const STORY_SYSTEM = (handle, context) => `You are a luxury creative director generating Instagram Story HTML for ${handle}.
 Context: ${context || 'Luxury commercial photography studio'}
+
 Generate a self-contained HTML div for 1080×1920px. Rules:
 - Inline styles only
-- Div must be exactly 1080×1920px
-- Use subject image as background
-- Return ONLY the HTML`
+- Div must be exactly 1080×1920px with overflow: hidden
+- Use src="[IMAGE_SRC]" for img tags, url('[IMAGE_SRC]') for CSS backgrounds
+- The image must be visible and fill most of the frame
+- Return ONLY the HTML div`
 
 export default function StudioTab({ showToast }) {
   const { state } = useStore()
@@ -97,8 +102,12 @@ export default function StudioTab({ showToast }) {
     const prompt = `Generate a ${isStory ? '1080×1920 Instagram Story' : '1080×1350 Instagram Post'} design.
 Handle: ${handle}
 Context: ${context || 'Luxury photography studio'}
-${stylePrompt ? `Style direction: ${stylePrompt}` : 'Style: Editorial luxury — clean, confident, magazine-quality'}${refNote}
-The subject image is provided. Use it as the hero/background. Div must be exactly ${w}px × ${h}px.`
+${stylePrompt ? `Style direction: ${stylePrompt}` : 'Style: Editorial luxury — clean, confident, magazine-quality. Image should be full-bleed or dominant.'}${refNote}
+
+CRITICAL: 
+- Use src="[IMAGE_SRC]" for the subject image (it will be replaced with the actual image)
+- The image MUST be visible in the final design — full bleed background or hero element
+- Div must be exactly ${w}px × ${h}px with position: relative; overflow: hidden`
 
     try {
       let raw
@@ -129,9 +138,22 @@ The subject image is provided. Use it as the hero/background. Div must be exactl
       }
 
       if (!raw) throw new Error('Empty response')
-      const html = raw.replace(/```html|```/g, '').trim()
-        .replace(/\[IMAGE_SRC\]/g, selectedImg.dataUrl)
-        .replace(/src="placeholder"/g, `src="${selectedImg.dataUrl}"`)
+      let html = raw.replace(/```html[\s\S]*?```/g, m => m.replace(/```html\n?/, '').replace(/\n?```/, ''))
+                    .replace(/```/g, '').trim()
+
+      // Comprehensive image injection — Claude uses many different placeholder patterns
+      const imgData = selectedImg.dataUrl
+      html = html
+        .replace(/\[IMAGE_SRC\]/g, imgData)
+        .replace(/\[SUBJECT_IMAGE\]/g, imgData)
+        .replace(/src="placeholder[^"]*"/g, `src="${imgData}"`)
+        .replace(/src='placeholder[^']*'/g, `src='${imgData}'`)
+        .replace(/url\(['"]?placeholder[^'")\s]*['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\(['"]?\[IMAGE[^\]]*\]['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\(['"]?YOUR_IMAGE_HERE['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\(['"]?image\.jpg['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\(['"]?photo\.jpg['"]?\)/g, `url('${imgData}')`)
+        .replace(/url\(['"]?background\.jpg['"]?\)/g, `url('${imgData}')`)
 
       if (isStory) {
         setStoryHtml(html)
