@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useStore, claudeCall, M_HAIKU } from '../store.jsx'
+import CarouselModal from './CarouselModal.jsx'
+import ShootChecklist from './ShootChecklist.jsx'
 
 const SIZE_OPTIONS = [
   { label: '1:1',  ratio: '1:1',  w: 1080, h: 1080 },
@@ -17,7 +19,7 @@ const POST_FORMATS = [
 ]
 
 function makeEmptyPost() {
-  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50, formatOverride: null, rotate: 0, flipH: false, flipV: false }
+  return { imageIndex: null, slides: [], type: 'single', caption: '', theme: '', notes: '', locked: false, panX: 50, panY: 50, formatOverride: null, rotate: 0, flipH: false, flipV: false, captionApproved: false }
 }
 
 function getCellRatio(post, globalSize) {
@@ -48,6 +50,8 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [gridScale, setGridScale]   = useState(1)
   const [thumbScale, setThumbScale] = useState(1)
   const [panModeIdx, setPanModeIdx] = useState(null)  // { postIdx, slideIdx } or null
+  const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
+  const [showChecklist, setShowChecklist] = useState(false)
   const panDrag = useRef(null)
 
   const imgByIdx = useCallback(idx => {
@@ -253,6 +257,9 @@ export default function PlanTab({ showToast, onTabChange }) {
               const data = state.plan.map(p => ({ ...p, imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '', slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || '') }))
               const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'KSS-Plan.json'; a.click(); showToast('Exported')
             }}>↓ Export</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowChecklist(true)} title="Generate AI shot checklist from your brief">
+              📋 Shot List
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={() => {
               const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
               input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader()
@@ -290,7 +297,7 @@ export default function PlanTab({ showToast, onTabChange }) {
                 <span>Instagram grid · drag to reorder · dbl-click image to pan</span>
                 <span>{state.plan.length} posts</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale) }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale), width: `${Math.round(gridScale * 100)}%`, minWidth: '60%' }}>
                 {state.plan.map((p, i) => {
                   const img = p.imageIndex ? imgByIdx(p.imageIndex) : null
                   const isEmpty = !img
@@ -325,6 +332,13 @@ export default function PlanTab({ showToast, onTabChange }) {
                             {p.formatOverride ? ` · ${p.formatOverride}` : ''}
                           </div>
                           {!p.caption && <div style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(138,58,58,.85)', color: '#fff', fontSize: 7, padding: '1px 4px', borderRadius: 2 }}>no cap</div>}
+                          {p.type === 'carousel' && p.slides?.length > 1 && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setCarouselPreview(i) }}
+                              style={{ position: 'absolute', bottom: 3, right: 3, background: 'rgba(0,0,0,.7)', border: '1px solid var(--silver-border)', borderRadius: 3, color: 'var(--silver)', fontSize: 7, padding: '2px 5px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                              preview
+                            </button>
+                          )}
                           {isPanMode && (
                             <div style={{ position: 'absolute', inset: 0, border: '2px solid var(--silver)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.15)', pointerEvents: 'none' }}>
                               <div style={{ background: 'rgba(0,0,0,.75)', color: 'var(--silver)', fontSize: 8, padding: '3px 8px', borderRadius: 10, fontFamily: 'var(--font-mono)' }}>drag · dbl-click to exit</div>
@@ -450,9 +464,46 @@ export default function PlanTab({ showToast, onTabChange }) {
             {/* Slides */}
             {inspectedPost.slides?.length > 0 && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5 }}>
-                  Slides ({inspectedPost.slides.length}) · dbl-click to pan
+                <div style={{ fontSize: 9, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Slides ({inspectedPost.slides.length})</span>
+                  <span style={{ color: 'var(--text-3)', fontSize: 8 }}>dbl-click to pan</span>
                 </div>
+
+                {/* Expanded view for active pan slide */}
+                {panModeIdx?.postIdx === inspectIdx && panModeIdx?.slideIdx !== null && (() => {
+                  const si = panModeIdx.slideIdx
+                  const sImg = imgByIdx(inspectedPost.slides[si])
+                  const transforms = inspectedPost.slideTransforms || {}
+                  const t = transforms[si] || { panX: 50, panY: 50 }
+                  return (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 8, color: 'var(--silver)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
+                        Slide {si + 1} — drag to reposition · dbl-click to exit
+                      </div>
+                      <div
+                        style={{ position: 'relative', width: '100%', aspectRatio: '4/5', borderRadius: 4, overflow: 'hidden', border: '2px solid var(--silver)', cursor: 'grab' }}
+                        onMouseDown={e => startSlidePan(e, inspectIdx, si)}
+                      >
+                        {sImg && <img src={sImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${t.panX}% ${t.panY}%` }} />}
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                          <div style={{ background: 'rgba(0,0,0,.6)', color: 'var(--silver)', fontSize: 9, padding: '4px 12px', borderRadius: 12, fontFamily: 'var(--font-mono)', border: '1px solid var(--silver-edge)' }}>
+                            ⤢ drag to pan
+                          </div>
+                        </div>
+                        <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,.75)', color: 'var(--silver)', fontSize: 8, padding: '2px 6px', borderRadius: 3, fontFamily: 'var(--font-mono)' }}>
+                          {Math.round(t.panX)}% / {Math.round(t.panY)}%
+                        </div>
+                        <button
+                          onClick={() => setPanModeIdx(null)}
+                          style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.75)', border: '1px solid var(--silver-edge)', borderRadius: 3, color: 'var(--silver)', fontSize: 9, padding: '2px 8px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                          done
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Slide thumbnail strip */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4 }}>
                   {inspectedPost.slides.map((idx, si) => {
                     const sImg = imgByIdx(idx)
@@ -460,18 +511,16 @@ export default function PlanTab({ showToast, onTabChange }) {
                     const t = transforms[si] || { panX: 50, panY: 50 }
                     const isSlidePanMode = panModeIdx?.postIdx === inspectIdx && panModeIdx?.slideIdx === si
                     return (
-                      <div key={si} style={{ position: 'relative', aspectRatio: '1', borderRadius: 2, overflow: 'hidden', border: `1px solid ${isSlidePanMode ? 'var(--silver)' : 'var(--border)'}`, cursor: isSlidePanMode ? 'grab' : 'pointer' }}
+                      <div key={si} style={{ position: 'relative', aspectRatio: '4/5', borderRadius: 2, overflow: 'hidden', border: `2px solid ${isSlidePanMode ? 'var(--silver)' : 'var(--border)'}`, cursor: 'pointer', transition: 'border-color .15s' }}
                         onDoubleClick={e => handleSlideDblClick(e, inspectIdx, si)}
-                        onMouseDown={e => startSlidePan(e, inspectIdx, si)}>
+                        onMouseDown={e => isSlidePanMode && startSlidePan(e, inspectIdx, si)}>
                         {sImg && <img src={sImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${t.panX}% ${t.panY}%` }} />}
-                        <div style={{ position: 'absolute', top: 2, left: 2, background: 'rgba(0,0,0,.7)', color: 'var(--silver)', fontSize: 7, padding: '1px 3px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>{si + 1}</div>
-                        {isSlidePanMode && (
-                          <div style={{ position: 'absolute', inset: 0, border: '1px solid var(--silver)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.3)', pointerEvents: 'none' }}>
-                            <span style={{ fontSize: 7, color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>drag</span>
-                          </div>
-                        )}
+                        <div style={{ position: 'absolute', bottom: 2, left: 2, background: 'rgba(0,0,0,.75)', color: isSlidePanMode ? 'var(--silver)' : 'var(--text-2)', fontSize: 7, padding: '1px 4px', borderRadius: 2, fontFamily: 'var(--font-mono)' }}>
+                          {isSlidePanMode ? '⤢' : si + 1}
+                        </div>
                         {!isSlidePanMode && inspectedPost.slides.length > 1 && (
-                          <button onClick={e => { e.stopPropagation(); removeSlide(inspectIdx, si) }} style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(138,58,58,.85)', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                          <button onClick={e => { e.stopPropagation(); removeSlide(inspectIdx, si) }}
+                            style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(138,58,58,.85)', color: '#fff', border: 'none', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
                         )}
                       </div>
                     )
@@ -501,6 +550,19 @@ export default function PlanTab({ showToast, onTabChange }) {
           </div>
         )}
       </div>
+
+      {/* Carousel preview modal */}
+      {carouselPreview !== null && state.plan[carouselPreview] && (
+        <CarouselModal
+          post={state.plan[carouselPreview]}
+          images={state.images}
+          postNum={state.plan.length - carouselPreview}
+          onClose={() => setCarouselPreview(null)}
+        />
+      )}
+
+      {/* Shoot checklist */}
+      {showChecklist && <ShootChecklist onClose={() => setShowChecklist(false)} showToast={showToast} />}
     </div>
   )
 }
