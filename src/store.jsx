@@ -224,5 +224,24 @@ export function getImageDimensions(dataUrl) {
   })
 }
 
+// ── EXPORT UTILITIES ──────────────────────────────────────
+export async function exportPng(html, width, height, filename) {
+  const r = await fetch('/api/export-png', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, width, height }),
+  })
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}))
+    throw new Error(e.error || `Export failed: HTTP ${r.status}`)
+  }
+  const blob = await r.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename || `KSS-Export-${Date.now()}.png`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 // ── CONSTANTS ──────────────────────────────────────────────
 export { PROXY, M_OPUS, M_SONNET, M_HAIKU }
