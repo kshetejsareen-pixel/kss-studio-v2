@@ -3,50 +3,88 @@ import { useStore, claudeVision, claudeCall, M_SONNET, M_HAIKU, exportPng, readF
 
 // ── SYSTEM PROMPTS ────────────────────────────────────────
 
-const VISION_ANALYSIS_SYSTEM = `You are a visual composition analyst. Analyse the provided image and return a JSON object:
+const VISION_ANALYSIS_SYSTEM = `You are a visual composition analyst for a luxury photography studio. Analyse the image and return JSON:
 {
-  "focalPoint": "where the main subject sits (e.g. center, lower-third, left)",
-  "negativeSpace": "where the open/empty areas are (e.g. top-right corner, upper third)",
-  "dominantTones": "light/dark/mid, and which areas (e.g. dark bottom, light sky top)",
-  "suggestedTextZone": "best area for text overlay without obscuring subject",
-  "mood": "one word mood (cinematic, warm, moody, clean, dramatic etc)",
-  "colorPalette": ["#hex1","#hex2","#hex3"]
+  "focalPoint": "where the main subject sits",
+  "negativeSpace": "where open/empty areas are — this is where text should live",
+  "dominantTones": "describe the light quality and tonal range",
+  "suggestedTextZone": "specific zone for text (e.g. upper-left third, bottom strip, right column)",
+  "textContrast": "light or dark — what will read better against the image in that zone",
+  "mood": "one word (cinematic / intimate / dramatic / airy / raw / refined / moody / charged)",
+  "colorPalette": ["#hex1","#hex2","#hex3"],
+  "typographyMood": "what typography personality fits (e.g. sharp geometric, flowing serif, stark mono, refined italic)",
+  "composition": "rule of thirds / centered / asymmetric / leading lines / frame within frame"
 }
-Return ONLY valid JSON, nothing else.`
+Return ONLY valid JSON.`
 
-const POST_SYSTEM = (handle, context, analysis, copy) => `You are a luxury creative director generating Instagram post HTML for ${handle}.
+const POST_SYSTEM = (handle, context, analysis, copy, website, direction) => `You are a director of design. You think like a creative director at a world-class agency — not a web developer, not a template maker.
+
+Studio: ${handle}
 Context: ${context || 'Luxury commercial photography studio'}
-${analysis ? `Image analysis: focal point at ${analysis.focalPoint}, negative space at ${analysis.negativeSpace}, dominant tones: ${analysis.dominantTones}. Place text in the ${analysis.suggestedTextZone}.` : ''}
-${copy?.headline ? `Use this copy — Headline: "${copy.headline}"${copy.sub ? `, Subheadline: "${copy.sub}"` : ''}${copy.tagline ? `, Tagline: "${copy.tagline}"` : ''}` : ''}
+Website: ${website || 'kshetejsareenstudios.com'}
 
-Rules:
+Image intelligence from vision analysis:
+- Focal point: ${analysis?.focalPoint || 'centre'}
+- Negative space (text zone): ${analysis?.negativeSpace || 'variable'}
+- Recommended text placement: ${analysis?.suggestedTextZone || 'use negative space'}
+- Text should be: ${analysis?.textContrast || 'contrasting'} on image
+- Image mood: ${analysis?.mood || 'refined'}
+- Typography personality: ${analysis?.typographyMood || 'considered'}
+- Composition type: ${analysis?.composition || 'asymmetric'}
+- Colour palette from image: ${analysis?.colorPalette?.join(', ') || 'derive from image'}
+
+${copy?.headline ? `Copy to use:
+- Headline: "${copy.headline}"${copy.sub ? `\n- Subheadline: "${copy.sub}"` : ''}${copy.tagline ? `\n- Tagline: "${copy.tagline}"` : ''}${copy.cta ? `\n- CTA: "${copy.cta}"` : ''}${copy.website ? `\n- Website: "${copy.website}"` : ''}` : 'Generate appropriate copy from the image context.'}
+
+${direction ? `Directorial intent: ${direction}` : 'No additional direction — let the image lead. Trust the composition.'}
+
+Design principles:
+- Typography, colour and layout must derive from the image itself — not from templates
+- Use the image's own palette for any overlays, text colours, or accents
+- Typography personality should match the image mood
+- Text must sit in the identified negative space — never obscure the subject
+- The design should feel like it was made for THIS image, not adapted from a template
+- Luxury means restraint — one strong typographic moment, not many competing elements
+- Include the website URL subtly — not as a focal point
+
+Technical rules:
 - Inline styles only — no external CSS files
-- Use <style> tag only for @import Google Fonts
-- Div must be exactly the specified dimensions with position: relative; overflow: hidden
-- Use src="[IMAGE_SRC]" for img tags, url('[IMAGE_SRC]') for CSS backgrounds
-- The image MUST be visible — full bleed or dominant hero
-- NEVER use a black rectangle as background unless style requires it
-- Return ONLY the HTML div, no explanation`
+- @import Google Fonts in a <style> tag if needed
+- Div exactly 1080×1350px, position: relative, overflow: hidden
+- Use src="[IMAGE_SRC]" for img, url('[IMAGE_SRC]') for CSS backgrounds
+- Image must be visible and dominant
+- Return ONLY the HTML div`
 
-const STORY_SYSTEM = (handle, context, analysis, copy) => `You are a luxury creative director generating Instagram Story HTML for ${handle}.
-Context: ${context || 'Luxury commercial photography studio'}
-${analysis ? `Image analysis: place text in ${analysis.suggestedTextZone}, tones: ${analysis.dominantTones}` : ''}
-${copy?.headline ? `Copy — Headline: "${copy.headline}"${copy.sub ? `, Sub: "${copy.sub}"` : ''}` : ''}
-Rules: Inline styles only. Div exactly 1080×1920px. Use src="[IMAGE_SRC]". Image visible. Return ONLY HTML.`
-
-const COPY_SYSTEM = (handle, context) => `You are a luxury brand copywriter for ${handle}, a high-end commercial photography studio.
+const STORY_SYSTEM = (handle, context, analysis, copy, website, direction) => `You are a director of design creating an Instagram Story for ${handle}.
+Website: ${website || 'kshetejsareenstudios.com'}
 Context: ${context || 'Luxury photography'}
+
+Vision analysis: text zone at ${analysis?.suggestedTextZone || 'open area'}, ${analysis?.textContrast || 'contrasting'} text, mood: ${analysis?.mood || 'refined'}, typography: ${analysis?.typographyMood || 'considered'}, palette: ${analysis?.colorPalette?.join(', ') || 'from image'}
+
+${copy?.headline ? `Copy: Headline "${copy.headline}"${copy.sub ? `, Sub "${copy.sub}"` : ''}${copy.cta ? `, CTA "${copy.cta}"` : ''}` : 'Generate copy from image.'}
+${direction ? `Direction: ${direction}` : 'Let the image lead.'}
+
+Rules: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dominant. Return ONLY HTML div.`
+
+const COPY_SYSTEM = (handle, context, website) => `You are a director of design and copywriter for ${handle}, a world-class commercial photography studio.
+Context: ${context || 'Luxury photography'}
+Website: ${website || 'kshetejsareenstudios.com'}
+
+Write with the authority of a creative director, not a copywriter following a brief.
 Rules:
-- Write minimal, editorial copy — luxury brands say less, mean more
-- No clichés: "capturing moments", "timeless", "bespoke", "stunning"
-- The CTA must ALWAYS be from Kshetej Sareen Studios' perspective — never from the client's. It should invite the viewer to work with KSS, not promote the client brand.
-- Good CTAs: "Book a shoot", "Inquire now", "View the full series", "Commission your story", "Let's create together"
-- Return JSON only:
+- Less is more — luxury brands say one thing, perfectly
+- No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens"
+- The headline should make you pause — not explain, but evoke
+- CTA is always from KSS perspective — an invitation to work together, never a client promotion
+- Website is always KSS: ${website || 'kshetejsareenstudios.com'}
+
+Return JSON only:
 {
-  "headline": "short punchy headline (2-6 words max)",
-  "sub": "optional subheadline (max 8 words, or null)",
-  "tagline": "optional one-line brand tagline (or null)",
-  "cta": "KSS-focused call to action"
+  "headline": "2-5 words maximum — the strongest version",
+  "sub": "one line that adds context, or null",
+  "tagline": "studio's voice — optional, or null",
+  "cta": "KSS invitation (e.g. Book a shoot / Commission your story / Inquire now)",
+  "website": "${website || 'kshetejsareenstudios.com'}"
 }
 Return ONLY valid JSON.`
 
@@ -82,8 +120,10 @@ export default function StudioTab({ showToast }) {
 
   // Copy panel
   const [copyPanel, setCopyPanel]         = useState(false)
-  const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '' })
+  const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '', website: '' })
+  const [lockedFields, setLockedFields]   = useState({ headline: false, sub: false, tagline: false, cta: false })
   const [generatingCopy, setGeneratingCopy] = useState(false)
+  const website = copy.website || state.settings?.website || 'kshetejsareenstudios.com'
 
   // Chat panel
   const [chatOpen, setChatOpen]           = useState(false)
@@ -141,18 +181,31 @@ export default function StudioTab({ showToast }) {
     if (!selectedImg) { showToast('Select an image first'); return }
     setGeneratingCopy(true)
     try {
-      const system = COPY_SYSTEM(state.settings.handle || '@kshetejsareenstudios', state.globalContext)
-      const prompt = `Generate luxury copy for this image. Brand: ${state.globalContext || 'luxury photography studio'}. Look at what's in the image — the copy should feel specific to it, not generic.`
-      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_HAIKU, 300)
+      const system = COPY_SYSTEM(state.settings.handle || '@kshetejsareenstudios', state.globalContext, website)
+      const lockedNote = Object.entries(lockedFields).filter(([,v])=>v).map(([k])=>k).join(', ')
+      const prompt = `Generate copy for this image. Brand context: ${state.globalContext || 'luxury photography studio'}.
+${lockedNote ? `These fields are locked — preserve exactly: ${lockedNote}` : ''}
+${lockedFields.headline && copy.headline ? `Keep headline as: "${copy.headline}"` : ''}
+${lockedFields.sub && copy.sub ? `Keep subheadline as: "${copy.sub}"` : ''}
+${lockedFields.tagline && copy.tagline ? `Keep tagline as: "${copy.tagline}"` : ''}
+${lockedFields.cta && copy.cta ? `Keep CTA as: "${copy.cta}"` : ''}
+Look at what's in the image — copy must feel specific to it, not generic.`
+      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_HAIKU, 400)
       const match = raw.match(/\{[\s\S]*\}/)
       if (match) {
         const parsed = JSON.parse(match[0])
-        setCopy({ headline: parsed.headline || '', sub: parsed.sub || '', tagline: parsed.tagline || '', cta: parsed.cta || '' })
+        setCopy(prev => ({
+          headline: lockedFields.headline ? prev.headline : (parsed.headline || ''),
+          sub:      lockedFields.sub      ? prev.sub      : (parsed.sub || ''),
+          tagline:  lockedFields.tagline  ? prev.tagline  : (parsed.tagline || ''),
+          cta:      lockedFields.cta      ? prev.cta      : (parsed.cta || ''),
+          website:  prev.website || parsed.website || website,
+        }))
         showToast('Copy generated ✓')
       }
-    } catch(e) { showToast('Copy generation failed: ' + e.message) }
+    } catch(e) { showToast('Copy failed: ' + e.message) }
     finally { setGeneratingCopy(false) }
-  }, [state, selectedImg, showToast])
+  }, [state, selectedImg, website, lockedFields, copy, showToast])
 
   // ── Generate design ──
   const generate = useCallback(async () => {
@@ -179,15 +232,14 @@ export default function StudioTab({ showToast }) {
       // Step 2 — Generate design
       setGenStep('Generating design…')
       const hasCopy = copy.headline || copy.sub || copy.tagline
-      const system = isStory ? STORY_SYSTEM(handle, context, analysis, hasCopy ? copy : null)
-                              : POST_SYSTEM(handle, context, analysis, hasCopy ? copy : null)
+      const system = isStory
+        ? STORY_SYSTEM(handle, context, analysis, hasCopy ? copy : null, website, stylePrompt)
+        : POST_SYSTEM(handle, context, analysis, hasCopy ? copy : null, website, stylePrompt)
 
-      const refNote = refImgDataUrl ? '\nReference image provided — match its layout, typography, colour palette.' : ''
       const prompt = `Generate a ${isStory ? '1080×1920 Instagram Story' : '1080×1350 Instagram Post'} design.
-Handle: ${handle}
-Context: ${context || 'Luxury photography studio'}
-${stylePrompt ? `Style: ${stylePrompt}` : `Style: ${analysis?.mood || 'editorial'} luxury — image dominant, considered typography`}${refNote}
-CRITICAL: Use src="[IMAGE_SRC]" for the image. Div must be exactly ${w}px × ${h}px.`
+Handle: ${handle} · Website: ${website}
+CRITICAL: Use src="[IMAGE_SRC]" for the subject image. Div must be exactly ${w}px × ${h}px.
+Think like a director of design — derive everything from the image itself.`
 
       let raw
       if (refImgDataUrl) {
@@ -307,7 +359,7 @@ CRITICAL: Use src="[IMAGE_SRC]" for the image. Div must be exactly ${w}px × ${h
         </div>
 
         {/* Canvas */}
-        <div ref={canvasRef} style={{ flex: 1, background: '#0A0A0A', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, position: 'relative' }}>
+        <div ref={canvasRef} style={{ flex: 1, background: currentHtml ? '#111' : '#0A0A0A', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: currentHtml ? 16 : 20, position: 'relative' }}>
           {!currentHtml ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%', minHeight: 400 }}>
               {selectedImg ? (
@@ -468,36 +520,66 @@ CRITICAL: Use src="[IMAGE_SRC]" for the image. Div must be exactly ${w}px × ${h
           {/* AI Copy panel */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <div className="field-label" style={{ flex: 1 }}>AI Copy</div>
+              <div className="field-label" style={{ flex: 1 }}>Copy & Text</div>
               <button className="btn btn-ghost btn-xs" onClick={() => setCopyPanel(c => !c)}>
                 {copyPanel ? '▲' : '▼'}
               </button>
             </div>
             {copyPanel && (
               <>
-                <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 8 }}>
+                <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
                   {generatingCopy ? <><span className="spin" /> Generating…</> : '✦ Generate Copy from Image'}
                 </button>
+
+                {/* Copy fields with lock */}
                 {[
-                  ['Headline', 'headline', 'e.g. "Where light lives"'],
-                  ['Subheadline', 'sub', 'e.g. "The Leela, Gurgaon"'],
-                  ['Tagline', 'tagline', 'e.g. "Luxury is a feeling."'],
-                  ['CTA', 'cta', 'e.g. "Inquire now"'],
+                  ['Headline',    'headline', 'The strongest 2-5 words'],
+                  ['Subheadline', 'sub',      'One line of context'],
+                  ['Tagline',     'tagline',  'Studio voice — optional'],
+                  ['CTA',         'cta',      'Invitation to work together'],
                 ].map(([label, key, ph]) => (
-                  <div key={key} style={{ marginBottom: 6 }}>
-                    <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
-                    <input className="input" value={copy[key]} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
-                      placeholder={ph} style={{ fontSize: 11, padding: '5px 8px' }} />
+                  <div key={key} style={{ marginBottom: 6, display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 8, color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {label}
+                        {lockedFields[key] && <span style={{ fontSize: 7, color: 'var(--silver)', opacity: .7 }}>locked</span>}
+                      </div>
+                      <input className="input" value={copy[key] || ''} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
+                        placeholder={lockedFields[key] ? '(locked)' : ph}
+                        disabled={lockedFields[key]}
+                        style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .6 : 1 }} />
+                    </div>
+                    {/* Lock toggle */}
+                    <button
+                      onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
+                      title={lockedFields[key] ? 'Unlock — will regenerate' : 'Lock — will preserve on next generate'}
+                      style={{ width: 24, height: 24, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {lockedFields[key] ? '🔒' : '🔓'}
+                    </button>
                   </div>
                 ))}
+
+                {/* Website field */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
+                  <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
+                    placeholder="kshetejsareenstudios.com"
+                    style={{ fontSize: 11, padding: '5px 8px' }} />
+                  <div style={{ fontSize: 8, color: 'var(--text-3)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>Leave blank to use default KSS website</div>
+                </div>
+
                 {(copy.headline || copy.sub) && (
-                  <button className="btn btn-ghost btn-xs" onClick={() => setCopy({ headline: '', sub: '', tagline: '', cta: '' })}>Clear copy</button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }) }}>Clear all</button>
+                    <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
+                  </div>
                 )}
               </>
             )}
             {!copyPanel && (copy.headline || copy.sub) && (
               <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 "{copy.headline || copy.sub}"
+                {Object.values(lockedFields).some(Boolean) && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {Object.values(lockedFields).filter(Boolean).length} locked</span>}
               </div>
             )}
           </div>
@@ -521,21 +603,26 @@ CRITICAL: Use src="[IMAGE_SRC]" for the image. Div must be exactly ${w}px × ${h
 
           {/* Style direction */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div className="field-label" style={{ marginBottom: 6 }}>Style Direction</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <div className="field-label" style={{ flex: 1 }}>Directorial Intent</div>
+              {stylePrompt && <button className="btn btn-ghost btn-xs" onClick={() => setStylePrompt('')}>clear</button>}
+            </div>
             <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
-              rows={2} placeholder="Describe mood, typography, colour only — e.g. dark moody, silver type, Syne&#10;Claude Vision determines text placement from the image"
+              rows={2} placeholder="Describe composition and feeling only — colours, fonts and text placement come from the image itself"
               style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[
-                ['Dark editorial', 'Dark moody overlay, silver/white typography, Syne font, minimal text'],
-                ['Clean minimal',  'Clean white treatment, black sans-serif, image dominant, subtle branding'],
-                ['Full bleed',     'Full bleed image, no overlay, minimal handle in white mono'],
-                ['Split layout',   'Split composition — image one side, editorial typography the other, dark background'],
-                ['Film grain',     'Warm film grain, amber tones, serif typography, cinematic letterboxing'],
+                ['Subject dominant',    'The subject fills the frame. Everything else — type, space, tone — bows to it. Minimal interference.'],
+                ['Negative space led',  'Find the open space in the image. Build the entire composition around it. The subject and text breathe together.'],
+                ['Graphic tension',     'Create visual tension between the image and the type. Contrast of scale, weight or placement. Uncomfortable in the right way.'],
+                ['Editorial stillness', 'Nothing moves, nothing shouts. The design should feel like a magazine spread that stopped time.'],
+                ['Layered depth',       'Multiple visual planes — foreground, subject, background. Typography exists in a separate plane, not on top of the image.'],
+                ['Cinematic',           'Think about what happens before and after the frame. The design should feel like a still from a film — incomplete, evocative.'],
               ].map(([label, p]) => (
                 <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
-                  style={{ padding: '5px 10px', textAlign: 'left', fontSize: 10, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer' }}>
-                  {label}
+                  style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.4 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 1 }}>{label}</div>
+                  <div style={{ fontSize: 9, opacity: .6, lineHeight: 1.3 }}>{p.slice(0, 60)}…</div>
                 </button>
               ))}
             </div>
