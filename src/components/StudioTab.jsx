@@ -251,35 +251,60 @@ CRITICAL:
             </div>
           </div>
 
-          {/* Filmstrip frames */}
+          {/* Filmstrip frames — grouped by orientation */}
           <div ref={filmRef}
-            style={{ display: 'flex', gap: 3, overflowX: 'auto', overflowY: 'hidden', padding: '8px 12px', height: filmSize + 24, alignItems: 'center', scrollbarWidth: 'thin', scrollbarColor: '#2A2A2A transparent' }}>
+            style={{ display: 'flex', gap: 0, overflowX: 'auto', overflowY: 'hidden', padding: '6px 12px', height: filmSize + 24, alignItems: 'center', scrollbarWidth: 'thin', scrollbarColor: '#2A2A2A transparent' }}>
             {state.images.length === 0 ? (
               <div style={{ fontSize: 10, color: '#333', fontFamily: 'var(--font-mono)', paddingLeft: 8 }}>Upload images to begin</div>
-            ) : state.images.map(img => {
-              const isSelected = selectedImg?.id === img.id
-              const frameW = getFrameW(img)
-              return (
-                <div key={img.id} data-id={img.id}
-                  onClick={() => setSelectedImgId(img.id)}
-                  style={{
-                    width: frameW, height: filmSize, flexShrink: 0,
-                    borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
-                    border: `2px solid ${isSelected ? 'var(--silver)' : 'transparent'}`,
-                    outline: isSelected ? '1px solid rgba(200,200,204,.2)' : 'none',
-                    outlineOffset: 2,
-                    position: 'relative',
-                    transition: 'border-color .12s',
-                    boxShadow: isSelected ? '0 0 12px rgba(200,200,204,.15)' : 'none',
+            ) : (() => {
+              // Group by orientation
+              const portrait  = state.images.filter(i => (i.orientation || 'portrait') === 'portrait')
+              const landscape = state.images.filter(i => i.orientation === 'landscape')
+              const square    = state.images.filter(i => i.orientation === 'square')
+              const groups    = [
+                { label: 'Portrait', images: portrait },
+                { label: 'Landscape', images: landscape },
+                { label: 'Square', images: square },
+              ].filter(g => g.images.length > 0)
+
+              return groups.map((group, gi) => (
+                <div key={group.label} style={{ display: 'flex', alignItems: 'center', gap: 0, flexShrink: 0 }}>
+                  {/* Group label */}
+                  <div style={{
+                    writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)',
+                    fontSize: 7, color: '#333', fontFamily: 'var(--font-mono)', letterSpacing: '.1em',
+                    textTransform: 'uppercase', paddingRight: 4, paddingLeft: gi > 0 ? 12 : 0,
+                    flexShrink: 0, userSelect: 'none',
                   }}>
-                  <img src={img.dataUrl} alt={img.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
-                  {isSelected && (
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--silver)' }} />
-                  )}
+                    {group.label} {group.images.length}
+                  </div>
+                  {/* Separator */}
+                  <div style={{ width: 1, height: filmSize * 0.7, background: '#1E1E1E', flexShrink: 0, marginRight: 6 }} />
+                  {/* Frames */}
+                  {group.images.map(img => {
+                    const isSelected = selectedImg?.id === img.id
+                    const frameW = getFrameW(img)
+                    return (
+                      <div key={img.id} data-id={img.id}
+                        onClick={() => setSelectedImgId(img.id)}
+                        style={{
+                          width: frameW, height: filmSize, flexShrink: 0, marginRight: 3,
+                          borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
+                          border: `2px solid ${isSelected ? 'var(--silver)' : 'transparent'}`,
+                          position: 'relative', transition: 'border-color .12s',
+                          boxShadow: isSelected ? '0 0 10px rgba(200,200,204,.15)' : 'none',
+                        }}>
+                        <img src={img.dataUrl} alt={img.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+                        {isSelected && (
+                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--silver)' }} />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              )
-            })}
+              ))
+            })()}
           </div>
         </div>
 
