@@ -39,12 +39,14 @@ Context: ${context || 'Luxury photography'}
 Rules:
 - Write minimal, editorial copy — luxury brands say less, mean more
 - No clichés: "capturing moments", "timeless", "bespoke", "stunning"
+- The CTA must ALWAYS be from Kshetej Sareen Studios' perspective — never from the client's. It should invite the viewer to work with KSS, not promote the client brand.
+- Good CTAs: "Book a shoot", "Inquire now", "View the full series", "Commission your story", "Let's create together"
 - Return JSON only:
 {
   "headline": "short punchy headline (2-6 words max)",
   "sub": "optional subheadline (max 8 words, or null)",
   "tagline": "optional one-line brand tagline (or null)",
-  "cta": "optional call to action (or null)"
+  "cta": "KSS-focused call to action"
 }
 Return ONLY valid JSON.`
 
@@ -521,14 +523,14 @@ CRITICAL: Use src="[IMAGE_SRC]" for the image. Div must be exactly ${w}px × ${h
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
             <div className="field-label" style={{ marginBottom: 6 }}>Style Direction</div>
             <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
-              rows={2} placeholder="e.g. Dark moody, silver type, Syne&#10;Or leave blank — AI decides from image mood"
+              rows={2} placeholder="Describe mood, typography, colour only — e.g. dark moody, silver type, Syne&#10;Claude Vision determines text placement from the image"
               style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[
-                ['Dark editorial', 'Dark moody overlay, silver/white typography, Syne font, minimal text, handle bottom right'],
-                ['Clean minimal',  'Clean white overlay bottom, black sans-serif, image dominant, subtle branding'],
-                ['Full bleed',     'Full bleed image, no overlay, handle small white mono font bottom right'],
-                ['Split layout',   'Image left 60%, text right 40% dark background, editorial typography'],
+                ['Dark editorial', 'Dark moody overlay, silver/white typography, Syne font, minimal text'],
+                ['Clean minimal',  'Clean white treatment, black sans-serif, image dominant, subtle branding'],
+                ['Full bleed',     'Full bleed image, no overlay, minimal handle in white mono'],
+                ['Split layout',   'Split composition — image one side, editorial typography the other, dark background'],
                 ['Film grain',     'Warm film grain, amber tones, serif typography, cinematic letterboxing'],
               ].map(([label, p]) => (
                 <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
