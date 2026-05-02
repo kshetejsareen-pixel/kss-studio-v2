@@ -153,7 +153,13 @@ export default function StudioTab({ showToast }) {
   // Zoom via wheel
   useEffect(() => {
     const el = canvasRef.current; if (!el) return
-    const h = (e) => { e.preventDefault(); setZoom(z => Math.max(0.1, Math.min(4, z + (e.deltaY < 0 ? 0.1 : -0.1)))) }
+    const h = (e) => {
+      e.preventDefault()
+      setZoom(z => {
+        const cur = z === 0 ? fitScale : z
+        return Math.max(0.1, Math.min(3, +(cur + (e.deltaY < 0 ? 0.05 : -0.05)).toFixed(2)))
+      })
+    }
     el.addEventListener('wheel', h, { passive: false })
     return () => el.removeEventListener('wheel', h)
   }, [designHtml, storyHtml])
@@ -212,7 +218,7 @@ Look at what's in the image — copy must feel specific to it, not generic.`
     const key = state.settings.anthropicKey
     if (!key) { showToast('Add API key in Settings'); return }
     if (!selectedImg) { showToast('Select an image first'); return }
-    setGenerating(true); setZoom(1); setChatHistory([])
+    setGenerating(true); setZoom(0); setChatHistory([])
 
     const isStory = mode === 'story'
     const w = 1080, h = isStory ? 1920 : 1350
@@ -317,8 +323,13 @@ Think like a director of design — derive everything from the image itself.`
 
   const currentHtml  = mode === 'story' ? storyHtml : designHtml
   const canvasDims   = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 }
-  const fitScale     = Math.min((canvasSize.h - 40) / canvasDims.h, (canvasSize.w - 40) / canvasDims.w) * 0.95
-  const displayScale = Math.max(0.05, fitScale * zoom)
+  // fitScale fills the measured canvas with 8px padding on each side
+  const fitScale     = canvasSize.w > 0 && canvasSize.h > 0
+    ? Math.min((canvasSize.w - 48) / canvasDims.w, (canvasSize.h - 48) / canvasDims.h)
+    : 0.3
+  // zoom is an absolute scale value, not a multiplier
+  // default zoom=0 means "fit to container"
+  const displayScale = zoom === 0 ? fitScale : zoom
   const getFrameW    = (img) => Math.round(filmSize * (img.width && img.height ? img.width / img.height : 0.75))
 
   return (
@@ -330,7 +341,7 @@ Think like a director of design — derive everything from the image itself.`
         {/* Toolbar */}
         <div style={{ display: 'flex', gap: 4, padding: '10px 16px', alignItems: 'center', flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
           {['post', 'story'].map(m => (
-            <button key={m} onClick={() => { setMode(m); setZoom(1) }}
+            <button key={m} onClick={() => { setMode(m); setZoom(0) }}
               style={{ padding: '5px 14px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
               {m === 'post' ? 'Post 4:5' : 'Story 9:16'}
             </button>
@@ -338,10 +349,10 @@ Think like a director of design — derive everything from the image itself.`
           {currentHtml && (
             <>
               <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 8 }}>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +(z - 0.1).toFixed(1)))}>−</button>
+                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +((z === 0 ? fitScale : z) - 0.05).toFixed(2)))}>−</button>
                 <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 36, textAlign: 'center' }}>{Math.round(displayScale * 100)}%</span>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(4, +(z + 0.1).toFixed(1)))}>+</button>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(1)}>fit</button>
+                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(3, +((z === 0 ? fitScale : z) + 0.05).toFixed(2)))}>+</button>
+                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(0)} title="Fit to screen">fit</button>
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                 <button className="btn btn-ghost btn-xs"
@@ -359,27 +370,46 @@ Think like a director of design — derive everything from the image itself.`
         </div>
 
         {/* Canvas */}
-        <div ref={canvasRef} style={{ flex: 1, background: currentHtml ? '#111' : '#0A0A0A', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: currentHtml ? 16 : 20, position: 'relative' }}>
+        <div ref={canvasRef}
+          style={{ flex: 1, background: '#0D0D0D', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
           {!currentHtml ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%', minHeight: 400 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%' }}>
               {selectedImg ? (
                 <>
-                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 360, maxWidth: '80%', objectFit: 'contain', opacity: .25, borderRadius: 4 }} />
-                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set style direction → Generate</div>
+                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 320, maxWidth: '70%', objectFit: 'contain', opacity: .2, borderRadius: 4 }} />
+                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set direction → Generate</div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 40, opacity: .08 }}>◫</div>
-                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Select image from filmstrip below</div>
+                  <div style={{ fontSize: 40, opacity: .06 }}>◫</div>
+                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Select image from filmstrip</div>
                 </>
               )}
             </div>
           ) : (
-            <div style={{ transformOrigin: 'top center', transform: `scale(${displayScale})`, width: canvasDims.w, height: canvasDims.h, flexShrink: 0 }}
-              dangerouslySetInnerHTML={{ __html: currentHtml }} />
+            /* Scale wrapper — reserves only the visual (post-scale) dimensions */
+            /* This prevents layout shift because flex sees the scaled size not the raw 1080px */
+            <div style={{
+              width: Math.round(canvasDims.w * displayScale),
+              height: Math.round(canvasDims.h * displayScale),
+              flexShrink: 0,
+              position: 'relative',
+              margin: 'auto',
+            }}>
+              <div style={{
+                position: 'absolute', top: 0, left: 0,
+                transformOrigin: 'top left',
+                transform: `scale(${displayScale})`,
+                width: canvasDims.w,
+                height: canvasDims.h,
+                pointerEvents: 'none',
+              }}
+                dangerouslySetInnerHTML={{ __html: currentHtml }}
+              />
+            </div>
           )}
           {generating && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(4px)' }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(4px)' }}>
               <div style={{ textAlign: 'center' }}>
                 <span className="spin" style={{ width: 20, height: 20, borderWidth: 2, display: 'block', margin: '0 auto 12px' }} />
                 <div style={{ fontSize: 11, color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>{genStep}</div>
