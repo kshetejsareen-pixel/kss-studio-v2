@@ -35,7 +35,7 @@ const initialState = {
   settings: {
     anthropicKey: saved.anthropicKey || '',
     googleKey: saved.googleKey || '',
-    handle: saved.handle || '@kshetejsareenstudios',
+    handle: saved.handle || '@kshetej.atwork',
     hashtags: saved.hashtags || '',
     cloudName: saved.cloudName || 'dsouvrzlr',
     cloudPreset: saved.cloudPreset || 'ml_default',

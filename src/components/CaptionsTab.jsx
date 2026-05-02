@@ -145,7 +145,7 @@ export default function CaptionsTab({ showToast }) {
       ? `\n\nFor reference, previously approved captions:\n${memory.slice(0,3).map(m => `"${m.caption}"`).join('\n')}\nMatch this voice.`
       : ''
     const system = CAPTION_SYSTEM(
-      state.settings.handle || '@kshetejsareenstudios',
+      state.settings.handle || '@kshetej.atwork',
       state.globalContext, `${voiceObj.label}: ${voiceObj.desc}`, notes
     ) + memoryRef
 
@@ -172,7 +172,7 @@ Look at the image carefully — mood, lighting, subject, composition. Write a ca
     setRefining(planIdx)
     const voiceObj = VOICE_OPTIONS.find(v => v.id === voice)
     const system = REFINE_SYSTEM(
-      state.settings.handle || '@kshetejsareenstudios',
+      state.settings.handle || '@kshetej.atwork',
       state.globalContext, `${voiceObj.label}: ${voiceObj.desc}`, notes
     )
     try {

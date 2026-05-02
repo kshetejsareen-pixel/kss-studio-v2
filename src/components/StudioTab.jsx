@@ -21,7 +21,7 @@ const POST_SYSTEM = (handle, context, analysis, copy, website, direction) => `Yo
 
 Studio: ${handle}
 Context: ${context || 'Luxury commercial photography studio'}
-Website: ${website || 'kshetejsareenstudios.com'}
+Website: ${website || 'www.kshetejsareen.com'}
 
 Image intelligence from vision analysis:
 - Focal point: ${analysis?.focalPoint || 'centre'}
@@ -56,7 +56,7 @@ Technical rules:
 - Return ONLY the HTML div`
 
 const STORY_SYSTEM = (handle, context, analysis, copy, website, direction) => `You are a director of design creating an Instagram Story for ${handle}.
-Website: ${website || 'kshetejsareenstudios.com'}
+Website: ${website || 'www.kshetejsareen.com'}
 Context: ${context || 'Luxury photography'}
 
 Vision analysis: text zone at ${analysis?.suggestedTextZone || 'open area'}, ${analysis?.textContrast || 'contrasting'} text, mood: ${analysis?.mood || 'refined'}, typography: ${analysis?.typographyMood || 'considered'}, palette: ${analysis?.colorPalette?.join(', ') || 'from image'}
@@ -68,7 +68,7 @@ Rules: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dom
 
 const COPY_SYSTEM = (handle, context, website) => `You are a director of design and copywriter for ${handle}, a world-class commercial photography studio.
 Context: ${context || 'Luxury photography'}
-Website: ${website || 'kshetejsareenstudios.com'}
+Website: ${website || 'www.kshetejsareen.com'}
 
 Write with the authority of a creative director, not a copywriter following a brief.
 Rules:
@@ -76,7 +76,7 @@ Rules:
 - No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens"
 - The headline should make you pause — not explain, but evoke
 - CTA is always from KSS perspective — an invitation to work together, never a client promotion
-- Website is always KSS: ${website || 'kshetejsareenstudios.com'}
+- Website is always KSS: ${website || 'www.kshetejsareen.com'}
 
 Return JSON only:
 {
@@ -84,7 +84,7 @@ Return JSON only:
   "sub": "one line that adds context, or null",
   "tagline": "studio's voice — optional, or null",
   "cta": "KSS invitation (e.g. Book a shoot / Commission your story / Inquire now)",
-  "website": "${website || 'kshetejsareenstudios.com'}"
+  "website": "${website || 'www.kshetejsareen.com'}"
 }
 Return ONLY valid JSON.`
 
@@ -123,7 +123,7 @@ export default function StudioTab({ showToast }) {
   const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '', website: '' })
   const [lockedFields, setLockedFields]   = useState({ headline: false, sub: false, tagline: false, cta: false })
   const [generatingCopy, setGeneratingCopy] = useState(false)
-  const website = copy.website || state.settings?.website || 'kshetejsareenstudios.com'
+  const website = copy.website || state.settings?.website || 'www.kshetejsareen.com'
 
   // Chat panel
   const [chatOpen, setChatOpen]           = useState(false)
@@ -181,7 +181,7 @@ export default function StudioTab({ showToast }) {
     if (!selectedImg) { showToast('Select an image first'); return }
     setGeneratingCopy(true)
     try {
-      const system = COPY_SYSTEM(state.settings.handle || '@kshetejsareenstudios', state.globalContext, website)
+      const system = COPY_SYSTEM(state.settings.handle || '@kshetej.atwork', state.globalContext, website)
       const lockedNote = Object.entries(lockedFields).filter(([,v])=>v).map(([k])=>k).join(', ')
       const prompt = `Generate copy for this image. Brand context: ${state.globalContext || 'luxury photography studio'}.
 ${lockedNote ? `These fields are locked — preserve exactly: ${lockedNote}` : ''}
@@ -216,7 +216,7 @@ Look at what's in the image — copy must feel specific to it, not generic.`
 
     const isStory = mode === 'story'
     const w = 1080, h = isStory ? 1920 : 1350
-    const handle = state.settings.handle || '@kshetejsareenstudios'
+    const handle = state.settings.handle || '@kshetej.atwork'
     const context = state.globalContext
 
     try {
@@ -563,7 +563,7 @@ Think like a director of design — derive everything from the image itself.`
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
                   <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
-                    placeholder="kshetejsareenstudios.com"
+                    placeholder="www.kshetejsareen.com"
                     style={{ fontSize: 11, padding: '5px 8px' }} />
                   <div style={{ fontSize: 8, color: 'var(--text-3)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>Leave blank to use default KSS website</div>
                 </div>
