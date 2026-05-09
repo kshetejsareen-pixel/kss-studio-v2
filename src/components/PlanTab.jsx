@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useStore, claudeCall, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
@@ -53,6 +53,19 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
   const panDrag = useRef(null)
+  const gridScrollRef = useRef(null)
+
+  useEffect(() => {
+    const el = gridScrollRef.current
+    if (!el) return
+    const handler = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      setGridScale(s => Math.min(2.0, Math.max(0.3, +(s + (e.deltaY < 0 ? 0.05 : -0.05)).toFixed(2))))
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [])
 
   const imgByIdx = useCallback(idx => {
     if (!idx || idx < 1 || idx > state.images.length) return null
@@ -290,8 +303,10 @@ export default function PlanTab({ showToast, onTabChange }) {
             }}>↑ Import</button>
             <div className="row" style={{ gap: 3, marginLeft: 'auto', alignItems: 'center' }}>
               <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>Grid</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.5, +(s - 0.15).toFixed(2)))}>−</button>
-              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(1.8, +(s + 0.15).toFixed(2)))}>+</button>
+              <button className="btn btn-ghost btn-xs" onClick={() => { setGridScale(0.45); setPostCount(c => Math.max(c, 9)) }} title="9-up overview">9</button>
+              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.3, +(s - 0.1).toFixed(2)))}>−</button>
+              <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', minWidth: 28, textAlign: 'center' }}>{Math.round(gridScale * 100)}%</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(2.0, +(s + 0.1).toFixed(2)))}>+</button>
             </div>
           </div>
           {allFilled && (
@@ -302,7 +317,7 @@ export default function PlanTab({ showToast, onTabChange }) {
           )}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div ref={gridScrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {state.plan.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--mute)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set posts and click ✓ Set — or use Plan with Claude</div>
           ) : (
@@ -311,7 +326,7 @@ export default function PlanTab({ showToast, onTabChange }) {
                 <span>Instagram grid · drag to reorder · dbl-click image to pan</span>
                 <span>{state.plan.length} posts</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale), width: `${Math.round(gridScale * 100)}%`, minWidth: '60%' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale), width: `${Math.round(gridScale * 100)}%` }}>
                 {state.plan.map((p, i) => {
                   const img = p.imageIndex ? imgByIdx(p.imageIndex) : null
                   const isEmpty = !img
