@@ -4,8 +4,8 @@
 import { createContext, useContext, useReducer, useCallback } from 'react'
 
 const PROXY = 'https://kss-proxy.kshetej-sareen.workers.dev'
-const M_OPUS   = 'claude-opus-4-5'
-const M_SONNET = 'claude-sonnet-4-5'
+const M_OPUS   = 'claude-opus-4-7'
+const M_SONNET = 'claude-sonnet-4-6'
 const M_HAIKU  = 'claude-haiku-4-5-20251001'
 
 // Load saved settings from localStorage at startup

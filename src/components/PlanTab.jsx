@@ -122,13 +122,36 @@ export default function PlanTab({ showToast, onTabChange }) {
     const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\nDirector's notes: ${planningNotes.trim() || 'None'}\nReference links: ${referenceLinks.length ? referenceLinks.join(', ') : 'None'}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
-      const match = raw.match(/\[[\s\S]*\]/)
+      const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
-      resetPlan(parsed.map(p => ({ ...makeEmptyPost(), imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
+      console.log('[KSS Plan] Claude raw:', JSON.stringify(parsed).slice(0, 600))
+
+      // Detect 0-based imageIndex (model sometimes returns 0,1,2 instead of 1,2,3)
+      const minIdx = Math.min(...parsed.map(p => typeof p.imageIndex === 'number' ? p.imageIndex : Infinity))
+      const shift = minIdx === 0 ? 1 : 0
+
+      const planItems = parsed.map(p => {
+        const rawIdx = p.imageIndex ?? p.image_index ?? p.index ?? null
+        const idx = typeof rawIdx === 'number' ? rawIdx + shift : null
+        const imageIndex = (idx !== null && idx >= 1 && idx <= totalImgs) ? idx : null
+        const rawSlides = Array.isArray(p.slides) ? p.slides : []
+        const slides = rawSlides
+          .map(s => typeof s === 'number' ? s + shift : null)
+          .filter(s => s !== null && s >= 1 && s <= totalImgs)
+        return { ...makeEmptyPost(), imageIndex, slides: slides.length ? slides : imageIndex ? [imageIndex] : [], type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' }
+      })
+
+      const filled = planItems.filter(p => p.imageIndex).length
+      resetPlan(planItems)
       set('postW', size.w); set('postH', size.h)
-      setChatHistory([{ role: 'claude', content: `Plan generated — ${parsed.length} posts. Ask me to refine anything.` }])
-      showToast(`Layout ready — ${parsed.length} posts`)
+      setChatHistory([{ role: 'claude', content: `Plan generated — ${filled} / ${planItems.length} posts filled. Ask me to refine anything.` }])
+      if (filled === 0) {
+        console.warn('[KSS Plan] All imageIndexes resolved to null. Raw data:', parsed)
+        showToast('Plan set but images not matched — check console')
+      } else {
+        showToast(`Layout ready — ${filled} of ${planItems.length} posts`)
+      }
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setPlanning(false) }
   }
@@ -146,11 +169,23 @@ export default function PlanTab({ showToast, onTabChange }) {
     const userMsg = { role: 'user', content: instruction }
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
-      const match = raw.match(/\[[\s\S]*\]/)
+      const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
-      resetPlan(parsed.map(p => ({ ...makeEmptyPost(), ...state.plan[parsed.indexOf(p)], imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
-      setChatHistory(h => [...h, userMsg, { role: 'claude', content: `Done — ${parsed.length} posts updated.` }])
+      const totalImgs = state.images.length
+      const minIdx = Math.min(...parsed.map(p => typeof p.imageIndex === 'number' ? p.imageIndex : Infinity))
+      const shift = minIdx === 0 ? 1 : 0
+      const planItems = parsed.map((p, i) => {
+        const rawIdx = p.imageIndex ?? p.image_index ?? p.index ?? null
+        const idx = typeof rawIdx === 'number' ? rawIdx + shift : null
+        const imageIndex = (idx !== null && idx >= 1 && idx <= totalImgs) ? idx : null
+        const rawSlides = Array.isArray(p.slides) ? p.slides : []
+        const slides = rawSlides.map(s => typeof s === 'number' ? s + shift : null).filter(s => s !== null && s >= 1 && s <= totalImgs)
+        const base = state.plan[i] ? { ...state.plan[i] } : makeEmptyPost()
+        return { ...base, imageIndex, slides: slides.length ? slides : imageIndex ? [imageIndex] : [], type: p.type || base.type || 'single', theme: p.theme || base.theme || '', notes: p.notes || base.notes || '' }
+      })
+      resetPlan(planItems)
+      setChatHistory(h => [...h, userMsg, { role: 'claude', content: `Done — ${planItems.filter(p => p.imageIndex).length} / ${planItems.length} posts updated.` }])
       setRefineInput('')
       showToast('Plan refined ✓')
     } catch (e) {
