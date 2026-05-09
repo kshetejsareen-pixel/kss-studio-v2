@@ -23,6 +23,12 @@ function AppInner() {
   const [synced, setSynced] = useState(true)
   const [researching, setResearching] = useState(false)
   const [showDrive, setShowDrive] = useState(false)
+  const [theme, setTheme] = useState(() => localStorage.getItem('kss_theme') || 'dark')
+  const toggleTheme = () => setTheme(t => {
+    const next = t === 'dark' ? 'light' : 'dark'
+    localStorage.setItem('kss_theme', next)
+    return next
+  })
   const { toast, showToast } = useToast()
   const syncTimer = useRef(null)
 
@@ -101,7 +107,7 @@ function AppInner() {
   }, [state.images, set, showToast])
 
   return (
-    <div className="shell">
+    <div className="shell" data-theme={theme}>
 
       {/* ── TOPBAR ── */}
       <header className="topbar">
@@ -123,6 +129,10 @@ function AppInner() {
         </nav>
 
         <div className="topbar-right">
+          <button className="btn btn-ghost btn-xs" onClick={toggleTheme}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px' }}>
+            {theme === 'dark' ? '◑ Light' : '◐ Dark'}
+          </button>
           <div className={`status-dot ${state.settings.metaToken ? 'connected' : ''}`} />
           <span style={{ fontSize: 10, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>
             Meta: {state.settings.metaToken ? 'on' : 'off'}

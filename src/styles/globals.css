@@ -50,6 +50,35 @@
   --shadow-silver:0 0 0 1px var(--silver-border), 0 4px 16px rgba(0,0,0,.5);
 }
 
+/* ── LIGHT MODE ── */
+[data-theme="light"] {
+  --bg:            #F5F3EF;
+  --bg2:           #EDEAE5;
+  --surface:       #FFFFFF;
+  --surface2:      #F8F6F2;
+  --surface3:      #EAE7E2;
+  --border:        #D5D1CB;
+  --border2:       #C0BBB5;
+  --text:          #1C1A18;
+  --text2:         #4A4744;
+  --mute:          #8A8682;
+  --mute2:         #AEAAA6;
+  --silver:        #3A3A42;
+  --silver2:       #1A1A22;
+  --silver-dim:    #5A5A62;
+  --silver-glow:   rgba(58, 58, 66, 0.06);
+  --silver-border: rgba(58, 58, 66, 0.15);
+  --green:         #3A7A4A;
+  --green-dim:     rgba(58, 122, 74, 0.1);
+  --red:           #A0382A;
+  --red-dim:       rgba(160, 56, 42, 0.1);
+  --amber:         #7A6030;
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.08);
+  --shadow-md:     0 4px 16px rgba(0,0,0,.1);
+  --shadow-lg:     0 8px 32px rgba(0,0,0,.12);
+  --shadow-silver: 0 0 0 1px var(--silver-border), 0 4px 16px rgba(0,0,0,.1);
+}
+
 /* ── RESET ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
