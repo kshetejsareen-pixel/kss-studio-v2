@@ -52,8 +52,25 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [panModeIdx, setPanModeIdx] = useState(null)  // { postIdx, slideIdx } or null
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
+  const [directorOpen, setDirectorOpen]   = useState(true)
+  const [referenceLinks, setReferenceLinks] = useState([])
+  const [refLinkInput, setRefLinkInput]   = useState('')
+  const [planningNotes, setPlanningNotes] = useState('')
+  const [chatHistory, setChatHistory]     = useState([])
+  const [refineInput, setRefineInput]     = useState('')
+  const [refining, setRefining]           = useState(false)
+  const notesTimer = useRef(null)
   const panDrag = useRef(null)
   const gridScrollRef = useRef(null)
+
+  useEffect(() => {
+    try {
+      const links = localStorage.getItem('kss_ref_links')
+      if (links) setReferenceLinks(JSON.parse(links))
+      const notes = localStorage.getItem('kss_plan_notes')
+      if (notes) setPlanningNotes(notes)
+    } catch {}
+  }, [])
 
   useEffect(() => {
     const el = gridScrollRef.current
@@ -102,18 +119,44 @@ export default function PlanTab({ showToast, onTabChange }) {
     const landscapes = state.images.filter(i => i.orientation === 'landscape').length
     const orientNote = landscapes > 0 ? `IMPORTANT: Never mix landscape and portrait in the same carousel.` : ''
     const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Plan image assignments only. Respond with valid JSON only.`
-    const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
+    const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\nDirector's notes: ${planningNotes.trim() || 'None'}\nReference links: ${referenceLinks.length ? referenceLinks.join(', ') : 'None'}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
-      // Extract JSON array from response — handle any surrounding text
       const match = raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
       resetPlan(parsed.map(p => ({ ...makeEmptyPost(), imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
       set('postW', size.w); set('postH', size.h)
+      setChatHistory([{ role: 'claude', content: `Plan generated — ${parsed.length} posts. Ask me to refine anything.` }])
       showToast(`Layout ready — ${parsed.length} posts`)
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setPlanning(false) }
+  }
+
+  const handleRefine = async () => {
+    const instruction = refineInput.trim()
+    if (!instruction) return
+    const key = state.settings.anthropicKey
+    if (!key) { showToast('Add Anthropic API key in Settings'); return }
+    setRefining(true)
+    const imgDesc = state.images.slice(0, 30).map((img, i) => `${i + 1}. ${img.name} [${img.orientation}]`).join('\n')
+    const currentPlan = JSON.stringify(state.plan.map(p => ({ imageIndex: p.imageIndex, type: p.type, theme: p.theme, slides: p.slides })))
+    const system = `You are a luxury Instagram content strategist. Refine the plan per the director's instruction. Return ONLY a valid JSON array in the same format as the input plan.`
+    const prompt = `Current plan (${state.plan.length} posts): ${currentPlan}\nAvailable images:\n${imgDesc}\nDirector instruction: ${instruction}`
+    const userMsg = { role: 'user', content: instruction }
+    try {
+      const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
+      const match = raw.match(/\[[\s\S]*\]/)
+      if (!match) throw new Error('No JSON array in response')
+      const parsed = JSON.parse(match[0])
+      resetPlan(parsed.map(p => ({ ...makeEmptyPost(), ...state.plan[parsed.indexOf(p)], imageIndex: p.imageIndex || null, slides: p.slides || [p.imageIndex].filter(Boolean), type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' })))
+      setChatHistory(h => [...h, userMsg, { role: 'claude', content: `Done — ${parsed.length} posts updated.` }])
+      setRefineInput('')
+      showToast('Plan refined ✓')
+    } catch (e) {
+      setChatHistory(h => [...h, userMsg, { role: 'claude', content: `Error: ${e.message}` }])
+      showToast('Refine failed: ' + e.message)
+    } finally { setRefining(false) }
   }
 
   const handleCellDrop = useCallback((e, cellIdx) => {
@@ -316,6 +359,83 @@ export default function PlanTab({ showToast, onTabChange }) {
             </button>
           )}
         </div>
+
+        {/* ── DIRECTOR CARD ── */}
+        <div className="card" style={{ padding: '10px 14px', flexShrink: 0 }}>
+          <div className="row" style={{ alignItems: 'center', cursor: 'pointer', userSelect: 'none' }} onClick={() => setDirectorOpen(o => !o)}>
+            <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--silver)', letterSpacing: 1, textTransform: 'uppercase' }}>
+              {directorOpen ? '▼' : '▶'} Director
+            </span>
+          </div>
+          {directorOpen && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Reference Links */}
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 1 }}>References</div>
+                <div className="row" style={{ gap: 6 }}>
+                  <input className="input" style={{ flex: 1, fontSize: 11 }} value={refLinkInput} onChange={e => setRefLinkInput(e.target.value)}
+                    placeholder="Paste a URL…"
+                    onKeyDown={e => { if (e.key === 'Enter' && refLinkInput.trim()) { const url = refLinkInput.trim(); const updated = [...referenceLinks, url]; setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)); setRefLinkInput('') } }} />
+                  <button className="btn btn-ghost btn-sm" onClick={() => { if (!refLinkInput.trim()) return; const url = refLinkInput.trim(); const updated = [...referenceLinks, url]; setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)); setRefLinkInput('') }}>+ Add</button>
+                </div>
+                {referenceLinks.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                    {referenceLinks.slice(0, 5).map((url, i) => {
+                      let domain = url; try { domain = new URL(url).hostname.replace('www.', '') } catch {}
+                      return (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 6px', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>
+                          <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--text2)', textDecoration: 'none' }}>{domain}</a>
+                          <button onClick={() => { const updated = referenceLinks.filter((_, j) => j !== i); setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 10 }}>×</button>
+                        </span>
+                      )
+                    })}
+                    {referenceLinks.length > 5 && <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>+{referenceLinks.length - 5} more</span>}
+                  </div>
+                )}
+              </div>
+              {/* Planning Notes */}
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 1 }}>Planning Notes</div>
+                <textarea className="input" rows={3} style={{ width: '100%', resize: 'none', fontSize: 11 }}
+                  value={planningNotes}
+                  placeholder="Director's notes — e.g. open with the black dress editorial, group architecture shots together…"
+                  onChange={e => {
+                    setPlanningNotes(e.target.value)
+                    clearTimeout(notesTimer.current)
+                    notesTimer.current = setTimeout(() => localStorage.setItem('kss_plan_notes', e.target.value), 300)
+                  }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── REFINE CHAT ── */}
+        {state.plan.length > 0 && (
+          <div className="card" style={{ padding: '10px 14px', flexShrink: 0 }}>
+            <div style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Refine with Claude</div>
+            {chatHistory.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8, maxHeight: 140, overflowY: 'auto' }}>
+                {chatHistory.slice(-6).map((msg, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '80%', padding: '4px 8px', borderRadius: 3, fontSize: 10, lineHeight: 1.4, fontFamily: msg.role === 'claude' ? 'var(--font-mono)' : 'var(--font-body)', background: msg.role === 'user' ? 'var(--surface2)' : 'var(--surface)', color: msg.role === 'user' ? 'var(--text)' : 'var(--silver)', border: '1px solid var(--border)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                {chatHistory.length > 6 && <div style={{ fontSize: 9, color: 'var(--mute2)', fontFamily: 'var(--font-mono)', textAlign: 'center' }}>— scroll up for more —</div>}
+              </div>
+            )}
+            <div className="row" style={{ gap: 6 }}>
+              <input className="input" style={{ flex: 1, fontSize: 11 }} value={refineInput} onChange={e => setRefineInput(e.target.value)}
+                placeholder="Refine the plan — e.g. group the architecture shots…"
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) handleRefine() }}
+                disabled={refining} />
+              <button className="btn btn-ghost btn-sm" onClick={handleRefine} disabled={refining || !refineInput.trim()}>
+                {refining ? <span className="spin" /> : '→'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div ref={gridScrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {state.plan.length === 0 ? (
