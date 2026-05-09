@@ -52,7 +52,7 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [panModeIdx, setPanModeIdx] = useState(null)  // { postIdx, slideIdx } or null
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
-  const [directorOpen, setDirectorOpen]   = useState(true)
+  const [directorOpen, setDirectorOpen]   = useState(false)
   const [referenceLinks, setReferenceLinks] = useState([])
   const [refLinkInput, setRefLinkInput]   = useState('')
   const [planningNotes, setPlanningNotes] = useState('')
@@ -410,11 +410,11 @@ export default function PlanTab({ showToast, onTabChange }) {
         </div>
 
         {/* ── REFINE CHAT ── */}
-        {state.plan.length > 0 && (
+        {chatHistory.length > 0 && (
           <div className="card" style={{ padding: '10px 14px', flexShrink: 0 }}>
             <div style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Refine with Claude</div>
             {chatHistory.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8, maxHeight: 140, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8, maxHeight: 90, overflowY: 'auto' }}>
                 {chatHistory.slice(-6).map((msg, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                     <div style={{ maxWidth: '80%', padding: '4px 8px', borderRadius: 3, fontSize: 10, lineHeight: 1.4, fontFamily: msg.role === 'claude' ? 'var(--font-mono)' : 'var(--font-body)', background: msg.role === 'user' ? 'var(--surface2)' : 'var(--surface)', color: msg.role === 'user' ? 'var(--text)' : 'var(--silver)', border: '1px solid var(--border)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
@@ -437,7 +437,7 @@ export default function PlanTab({ showToast, onTabChange }) {
           </div>
         )}
 
-        <div ref={gridScrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div ref={gridScrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 160 }}>
           {state.plan.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--mute)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set posts and click ✓ Set — or use Plan with Claude</div>
           ) : (
