@@ -52,6 +52,8 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [panModeIdx, setPanModeIdx] = useState(null)  // { postIdx, slideIdx } or null
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
+  const [excludedImgIds, setExcludedImgIds] = useState(new Set())
+  const [hoveredThumb, setHoveredThumb]   = useState(null)
   const [directorOpen, setDirectorOpen]   = useState(false)
   const [referenceLinks, setReferenceLinks] = useState([])
   const [refLinkInput, setRefLinkInput]   = useState('')
@@ -98,6 +100,10 @@ export default function PlanTab({ showToast, onTabChange }) {
     return state.images[idx - 1] || null
   }, [state.images])
 
+  const toggleExclude = useCallback(imgId => {
+    setExcludedImgIds(prev => { const next = new Set(prev); if (next.has(imgId)) next.delete(imgId); else next.add(imgId); return next })
+  }, [])
+
   const handleSetLayout = () => {
     const current = state.plan.length
     if (current === postCount) { showToast(`Already ${postCount} slots`); return }
@@ -120,11 +126,16 @@ export default function PlanTab({ showToast, onTabChange }) {
     const handle = state.settings.handle || '@kshetejsareenstudios'
     const globalCtx = state.globalContext
     const ratio = `${size.w}×${size.h}`
-    const imgDesc = state.images.slice(0, 30).map((img, i) => `${i + 1}. ${img.name} [${img.orientation}]`).join('\n')
-    const perPost = totalImgs / postCount
+    // Keep original 1-based indices intact so imgByIdx resolves correctly after planning.
+    // Excluded images are simply omitted from the list — Claude won't see or use them.
+    const imgDesc = state.images.slice(0, 40)
+      .map((img, i) => excludedImgIds.has(img.id) ? null : `${i + 1}. ${img.name} [${img.orientation}]`)
+      .filter(Boolean).join('\n')
+    const availableCount = state.images.filter(img => !excludedImgIds.has(img.id)).length
+    const perPost = availableCount / postCount
     const distributionNote = perPost >= 2
-      ? `${totalImgs} images across ${postCount} posts — use CAROUSELS (~${Math.ceil(perPost)} slides each).`
-      : `${totalImgs} images, ${postCount} posts — 1 image per post.`
+      ? `${availableCount} available images across ${postCount} posts — use CAROUSELS (~${Math.ceil(perPost)} slides each).`
+      : `${availableCount} images, ${postCount} posts — 1 image per post.`
     const landscapes = state.images.filter(i => i.orientation === 'landscape').length
     const orientNote = landscapes > 0 ? `IMPORTANT: Never mix landscape and portrait in the same carousel.` : ''
     const mixLabel = mix === 'carousels' ? 'carousels heavy — most posts should be carousels with multiple slides'
@@ -140,6 +151,8 @@ export default function PlanTab({ showToast, onTabChange }) {
       `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}).`,
       planningNotes.trim() ? `DIRECTOR'S MANDATE — follow these instructions precisely, they override everything else:\n${planningNotes.trim()}` : '',
       `HARD RULES — never break these:
+- You MUST return exactly ${postCount} objects in the JSON array — no fewer, no more.
+- Only use image indices from the provided list. Never invent an index that isn't listed.
 - Every image index must appear AT MOST ONCE across all posts and all carousel slides. No repeats whatsoever.
 - Respond with ONLY a valid JSON array. Zero text before or after. No explanation, no commentary.`,
     ].filter(Boolean).join('\n\n')
@@ -150,8 +163,8 @@ export default function PlanTab({ showToast, onTabChange }) {
       `Post format: ${ratio} · Content mix: ${mixLabel}`,
       distributionNote,
       orientNote,
-      `Available images (${totalImgs} total — use 1-based index, each index once only):\n${imgDesc}`,
-      `Return ONLY a valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
+      `Available images — ONLY use indices from this list (1-based, each index once only):\n${imgDesc}`,
+      `Return ONLY a JSON array of exactly ${postCount} objects:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
     ].filter(Boolean).join('\n\n')
     try {
       const raw = await claudeCall(key, system, prompt, M_SONNET, 4000)
@@ -183,15 +196,18 @@ export default function PlanTab({ showToast, onTabChange }) {
         return { ...makeEmptyPost(), imageIndex, slides: slides.length ? slides : imageIndex ? [imageIndex] : [], type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' }
       })
 
-      const filled = planItems.filter(p => p.imageIndex).length
-      resetPlan(planItems)
+      // Enforce exact postCount — pad with empty slots if Claude returned fewer
+      while (planItems.length < postCount) planItems.push(makeEmptyPost())
+      const finalPlan = planItems.slice(0, postCount)
+      const filled = finalPlan.filter(p => p.imageIndex).length
+      resetPlan(finalPlan)
       set('postW', size.w); set('postH', size.h)
-      setChatHistory([{ role: 'claude', content: `Plan generated — ${filled} / ${planItems.length} posts filled. Ask me to refine anything.` }])
+      setChatHistory([{ role: 'claude', content: `Plan generated — ${filled} / ${finalPlan.length} posts filled. Ask me to refine anything.` }])
       if (filled === 0) {
         console.warn('[KSS Plan] All imageIndexes resolved to null. Raw data:', parsed)
         showToast('Plan set but images not matched — check console')
       } else {
-        showToast(`Layout ready — ${filled} of ${planItems.length} posts`)
+        showToast(`Layout ready — ${filled} of ${finalPlan.length} posts`)
       }
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setPlanning(false) }
@@ -389,12 +405,27 @@ export default function PlanTab({ showToast, onTabChange }) {
 
   const renderThumb = (img) => {
     const imgIdx = state.images.indexOf(img) + 1
+    const isExcluded = excludedImgIds.has(img.id)
+    const isHovered = hoveredThumb === img.id
     return (
-      <div key={img.id} style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: '1px solid var(--border)', cursor: 'grab', position: 'relative' }}
-        draggable onDragStart={e => { e.dataTransfer.setData('sidebar-img-id', img.id); e.dataTransfer.setData('unassigned-img', imgIdx); e.currentTarget.style.opacity = '.5' }}
-        onDragEnd={e => e.currentTarget.style.opacity = '1'} title={img.name}>
+      <div key={img.id}
+        style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: `1px solid ${isExcluded ? 'rgba(180,60,60,.6)' : 'var(--border)'}`, cursor: isExcluded ? 'default' : 'grab', position: 'relative', opacity: isExcluded ? 0.38 : 1, transition: 'opacity .15s, border-color .15s' }}
+        draggable={!isExcluded}
+        onDragStart={isExcluded ? undefined : e => { e.dataTransfer.setData('sidebar-img-id', img.id); e.dataTransfer.setData('unassigned-img', imgIdx); e.currentTarget.style.opacity = '.5' }}
+        onDragEnd={e => e.currentTarget.style.opacity = '1'}
+        onMouseEnter={() => setHoveredThumb(img.id)}
+        onMouseLeave={() => setHoveredThumb(null)}
+        title={isExcluded ? `${img.name} — excluded from planning` : img.name}>
         <img src={img.dataUrl} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        {img.orientation === 'landscape' && <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(74,122,191,.9)', color: '#fff', fontSize: 6, padding: '1px 2px', borderRadius: 1 }}>L</span>}
+        {img.orientation === 'landscape' && !isHovered && !isExcluded && (
+          <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(74,122,191,.9)', color: '#fff', fontSize: 6, padding: '1px 2px', borderRadius: 1 }}>L</span>
+        )}
+        {(isHovered || isExcluded) && (
+          <button onClick={e => { e.stopPropagation(); toggleExclude(img.id) }}
+            style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: isExcluded ? 'rgba(74,122,191,.9)' : 'rgba(138,58,58,.88)', color: '#fff', border: 'none', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0, fontWeight: 'bold' }}>
+            {isExcluded ? '+' : '–'}
+          </button>
+        )}
       </div>
     )
   }
@@ -688,6 +719,12 @@ export default function PlanTab({ showToast, onTabChange }) {
             <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.max(0.5, +(s - 0.2).toFixed(1)))}>−</button>
             <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.min(2.5, +(s + 0.2).toFixed(1)))}>+</button>
           </div>
+          {excludedImgIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '3px 6px', background: 'rgba(138,58,58,.12)', border: '1px solid rgba(180,60,60,.3)', borderRadius: 3 }}>
+              <span style={{ fontSize: 9, color: 'var(--red, #c06)', fontFamily: 'var(--font-mono)' }}>{excludedImgIds.size} excluded from planning</span>
+              <button onClick={() => setExcludedImgIds(new Set())} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', padding: 0 }}>clear</button>
+            </div>
+          )}
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {imageTab === 'all' ? (
               state.images.length === 0 ? (
