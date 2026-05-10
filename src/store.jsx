@@ -176,6 +176,36 @@ export async function claudeResearch(key, brandName) {
   )
 }
 
+export async function claudeAnalyzeLayout(key, url) {
+  if (!key) throw new Error('No API key')
+  const system = `You are a visual content strategist analysing grid layouts for Instagram planning. Be concise and precise. Focus only on the visual structure and content mix.`
+  const user = `Visit this URL and analyse its visual grid layout: ${url}
+
+Describe in 3-5 sentences:
+1. Grid pattern and rhythm (e.g. alternating types, repeating motif, grouped subjects)
+2. Content types visible (product detail, full-body portrait, lifestyle, white-background flat-lay, architecture, etc.)
+3. Dominant image ratio (4:5 portrait, 1:1 square, 9:16 tall, 16:9 wide)
+4. Any notable sequencing or colour story
+
+Be specific and actionable for an Instagram content planner.`
+  const r = await fetch(PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: M_SONNET,
+      max_tokens: 500,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const d = await r.json()
+  const text = d.content?.filter(b => b.type === 'text').map(b => b.text).join(' ').trim()
+  if (!text) throw new Error('No layout description returned')
+  return text.substring(0, 600)
+}
+
 // ── IMAGE UTILITIES ──────────────────────────────────────
 export function extractBase64(dataUrl) {
   const m = dataUrl?.match(/^data:([^;]+);base64,(.+)$/)

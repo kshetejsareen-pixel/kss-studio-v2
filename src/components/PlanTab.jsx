@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeAnalyzeLayout, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -66,7 +66,16 @@ export default function PlanTab({ showToast, onTabChange }) {
   useEffect(() => {
     try {
       const links = localStorage.getItem('kss_ref_links')
-      if (links) setReferenceLinks(JSON.parse(links))
+      if (links) {
+        const parsed = JSON.parse(links)
+        // Migrate legacy string[] to object[]
+        const normalised = parsed.map(l =>
+          typeof l === 'string'
+            ? { url: l, domain: (() => { try { return new URL(l).hostname.replace('www.', '') } catch { return l } })(), analysis: null, analyzing: false }
+            : { ...l, analyzing: false }
+        )
+        setReferenceLinks(normalised)
+      }
       const notes = localStorage.getItem('kss_plan_notes')
       if (notes) setPlanningNotes(notes)
     } catch {}
@@ -122,9 +131,12 @@ export default function PlanTab({ showToast, onTabChange }) {
     const directorSection = planningNotes.trim()
       ? `DIRECTOR'S NOTES — follow these precisely when choosing images:\n${planningNotes.trim()}`
       : ''
-    const refsSection = referenceLinks.length
-      ? `Reference links (use for style/layout inspiration):\n${referenceLinks.join('\n')}`
-      : ''
+    const analysedRefs = referenceLinks.filter(l => l.analysis)
+    const refsSection = analysedRefs.length
+      ? `Reference layouts (Claude has analysed these — mirror their structure):\n${analysedRefs.map(l => `• ${l.domain}: ${l.analysis}`).join('\n\n')}`
+      : referenceLinks.length
+        ? `Reference URLs (not yet analysed — use as general style context):\n${referenceLinks.map(l => l.url || l).join('\n')}`
+        : ''
     const prompt = [
       `Plan an Instagram grid of ${postCount} posts for ${handle}.`,
       directorSection,
@@ -178,6 +190,40 @@ export default function PlanTab({ showToast, onTabChange }) {
       }
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setPlanning(false) }
+  }
+
+  const addReferenceLink = async (rawUrl) => {
+    const url = rawUrl.trim()
+    if (!url) return
+    let domain = url
+    try { domain = new URL(url).hostname.replace('www.', '') } catch {}
+    const entry = { url, domain, analysis: null, analyzing: true }
+    const updated = [...referenceLinks, entry]
+    setReferenceLinks(updated)
+    setRefLinkInput('')
+    const key = state.settings.anthropicKey
+    if (!key) {
+      const done = updated.map((l, i) => i === updated.length - 1 ? { ...l, analyzing: false, analysis: null } : l)
+      setReferenceLinks(done)
+      localStorage.setItem('kss_ref_links', JSON.stringify(done))
+      showToast('Add API key in Settings to analyse links')
+      return
+    }
+    try {
+      const analysis = await claudeAnalyzeLayout(key, url)
+      setReferenceLinks(prev => {
+        const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analysis, analyzing: false } : l)
+        localStorage.setItem('kss_ref_links', JSON.stringify(next))
+        return next
+      })
+    } catch (e) {
+      setReferenceLinks(prev => {
+        const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analyzing: false } : l)
+        localStorage.setItem('kss_ref_links', JSON.stringify(next))
+        return next
+      })
+      showToast('Could not analyse link: ' + e.message)
+    }
   }
 
   const handleRefine = async () => {
@@ -433,22 +479,31 @@ export default function PlanTab({ showToast, onTabChange }) {
                 <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 1 }}>References</div>
                 <div className="row" style={{ gap: 6 }}>
                   <input className="input" style={{ flex: 1, fontSize: 11 }} value={refLinkInput} onChange={e => setRefLinkInput(e.target.value)}
-                    placeholder="Paste a URL…"
-                    onKeyDown={e => { if (e.key === 'Enter' && refLinkInput.trim()) { const url = refLinkInput.trim(); const updated = [...referenceLinks, url]; setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)); setRefLinkInput('') } }} />
-                  <button className="btn btn-ghost btn-sm" onClick={() => { if (!refLinkInput.trim()) return; const url = refLinkInput.trim(); const updated = [...referenceLinks, url]; setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)); setRefLinkInput('') }}>+ Add</button>
+                    placeholder="Paste a URL — Claude will analyse the layout…"
+                    onKeyDown={e => { if (e.key === 'Enter' && refLinkInput.trim()) addReferenceLink(refLinkInput) }} />
+                  <button className="btn btn-ghost btn-sm" onClick={() => addReferenceLink(refLinkInput)}>+ Add</button>
                 </div>
                 {referenceLinks.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                    {referenceLinks.slice(0, 5).map((url, i) => {
-                      let domain = url; try { domain = new URL(url).hostname.replace('www.', '') } catch {}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                    {referenceLinks.map((ref, i) => {
+                      const isObj = typeof ref === 'object'
+                      const url = isObj ? ref.url : ref
+                      const domain = isObj ? ref.domain : url
+                      const analyzing = isObj ? ref.analyzing : false
+                      const analysis = isObj ? ref.analysis : null
                       return (
-                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 6px', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)' }}>
-                          <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--text2)', textDecoration: 'none' }}>{domain}</a>
-                          <button onClick={() => { const updated = referenceLinks.filter((_, j) => j !== i); setReferenceLinks(updated); localStorage.setItem('kss_ref_links', JSON.stringify(updated)) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 10 }}>×</button>
-                        </span>
+                        <div key={i} style={{ background: 'var(--surface2)', border: `1px solid ${analysis ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 3, padding: '5px 8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {analyzing && <span className="spin" style={{ width: 8, height: 8, borderWidth: 1 }} />}
+                            {!analyzing && analysis && <span style={{ color: 'var(--green)', fontSize: 9 }}>✓</span>}
+                            <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', textDecoration: 'none', flex: 1 }}>{domain}</a>
+                            <button onClick={() => { const next = referenceLinks.filter((_, j) => j !== i); setReferenceLinks(next); localStorage.setItem('kss_ref_links', JSON.stringify(next)) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', padding: 0, fontSize: 10 }}>×</button>
+                          </div>
+                          {analyzing && <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>Analysing layout…</div>}
+                          {analysis && <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{analysis}</div>}
+                        </div>
                       )
                     })}
-                    {referenceLinks.length > 5 && <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', alignSelf: 'center' }}>+{referenceLinks.length - 5} more</span>}
                   </div>
                 )}
               </div>
