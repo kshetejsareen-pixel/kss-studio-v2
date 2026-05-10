@@ -127,18 +127,26 @@ export default function PlanTab({ showToast, onTabChange }) {
       const parsed = JSON.parse(match[0])
       console.log('[KSS Plan] Claude raw:', JSON.stringify(parsed).slice(0, 600))
 
-      // Detect 0-based imageIndex (model sometimes returns 0,1,2 instead of 1,2,3)
-      const minIdx = Math.min(...parsed.map(p => typeof p.imageIndex === 'number' ? p.imageIndex : Infinity))
-      const shift = minIdx === 0 ? 1 : 0
+      // Detect 0-based indices — check BOTH imageIndex and slides values
+      const allNums = parsed.flatMap(p => {
+        const ns = []
+        if (typeof p.imageIndex === 'number') ns.push(p.imageIndex)
+        if (Array.isArray(p.slides)) p.slides.forEach(s => { if (typeof s === 'number') ns.push(s) })
+        return ns
+      })
+      const minNum = allNums.length ? Math.min(...allNums) : Infinity
+      const shift = minNum === 0 ? 1 : 0
 
       const planItems = parsed.map(p => {
         const rawIdx = p.imageIndex ?? p.image_index ?? p.index ?? null
         const idx = typeof rawIdx === 'number' ? rawIdx + shift : null
-        const imageIndex = (idx !== null && idx >= 1 && idx <= totalImgs) ? idx : null
         const rawSlides = Array.isArray(p.slides) ? p.slides : []
         const slides = rawSlides
           .map(s => typeof s === 'number' ? s + shift : null)
           .filter(s => s !== null && s >= 1 && s <= totalImgs)
+        // Use slides[0] as imageIndex if Claude left imageIndex null/invalid
+        const baseIdx = (idx !== null && idx >= 1 && idx <= totalImgs) ? idx : (slides[0] ?? null)
+        const imageIndex = baseIdx
         return { ...makeEmptyPost(), imageIndex, slides: slides.length ? slides : imageIndex ? [imageIndex] : [], type: p.type || 'single', theme: p.theme || '', notes: p.notes || '' }
       })
 
@@ -483,7 +491,7 @@ export default function PlanTab({ showToast, onTabChange }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: Math.round(3 * gridScale), width: `${Math.round(gridScale * 100)}%` }}>
                 {state.plan.map((p, i) => {
-                  const img = p.imageIndex ? imgByIdx(p.imageIndex) : null
+                  const img = imgByIdx(p.imageIndex) || imgByIdx(p.slides?.[0]) || null
                   const isEmpty = !img
                   const igNum = state.plan.length - i
                   const slides = p.slides?.length || 1
