@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeAnalyzeLayout, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -40,7 +40,7 @@ function getImgTransform(post) {
 
 export default function PlanTab({ showToast, onTabChange }) {
   const { state, set, resetPlan, setPlanItem } = useStore()
-  const [postCount, setPostCount]   = useState(6)
+  const [postCount, setPostCount]   = useState(9)
   const [size, setSize]             = useState(SIZE_OPTIONS[1])
   const [mix, setMix]               = useState('mixed')
   const [planning, setPlanning]     = useState(false)
@@ -197,33 +197,49 @@ export default function PlanTab({ showToast, onTabChange }) {
     if (!url) return
     let domain = url
     try { domain = new URL(url).hostname.replace('www.', '') } catch {}
-    const entry = { url, domain, analysis: null, analyzing: true }
+    const entry = { url, domain, analysis: null, analyzing: true, error: null, thumb: null }
     const updated = [...referenceLinks, entry]
     setReferenceLinks(updated)
     setRefLinkInput('')
     const key = state.settings.anthropicKey
     if (!key) {
-      const done = updated.map((l, i) => i === updated.length - 1 ? { ...l, analyzing: false, analysis: null } : l)
-      setReferenceLinks(done)
-      localStorage.setItem('kss_ref_links', JSON.stringify(done))
-      showToast('Add API key in Settings to analyse links')
-      return
+      const done = updated.map((l, i) => i === updated.length - 1 ? { ...l, analyzing: false, error: 'Add API key in Settings' } : l)
+      setReferenceLinks(done); localStorage.setItem('kss_ref_links', JSON.stringify(done)); return
     }
     try {
       const analysis = await claudeAnalyzeLayout(key, url)
-      setReferenceLinks(prev => {
-        const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analysis, analyzing: false } : l)
-        localStorage.setItem('kss_ref_links', JSON.stringify(next))
-        return next
-      })
+      setReferenceLinks(prev => { const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analysis, analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
     } catch (e) {
-      setReferenceLinks(prev => {
-        const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analyzing: false } : l)
-        localStorage.setItem('kss_ref_links', JSON.stringify(next))
-        return next
-      })
-      showToast('Could not analyse link: ' + e.message)
+      const errMsg = e.message?.toLowerCase().includes('pinterest') || e.message?.toLowerCase().includes('login') || e.message?.toLowerCase().includes('redirect')
+        ? 'Pinterest requires login — upload a screenshot instead'
+        : 'Could not analyse — upload a screenshot instead'
+      setReferenceLinks(prev => { const next = prev.map(l => l.url === url && l.analyzing ? { ...l, analyzing: false, error: errMsg } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
     }
+  }
+
+  const addReferenceScreenshot = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const key = state.settings.anthropicKey
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result
+      const thumb = dataUrl
+      const entry = { url: null, domain: file.name.replace(/\.[^.]+$/, ''), analysis: null, analyzing: true, error: null, thumb }
+      setReferenceLinks(prev => [...prev, entry])
+      if (!key) {
+        setReferenceLinks(prev => { const next = [...prev]; next[next.length - 1] = { ...next[next.length - 1], analyzing: false, error: 'Add API key in Settings' }; localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+        return
+      }
+      try {
+        const system = 'You are a visual content strategist analysing moodboard screenshots for Instagram grid planning. Be concise and specific.'
+        const userText = 'Analyse this screenshot and describe the visual layout: grid pattern, content types (product detail, portrait, lifestyle, etc.), dominant image ratio, and any notable sequencing or colour story. Be actionable for an Instagram content planner.'
+        const analysis = await claudeVision(key, system, userText, dataUrl)
+        setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analysis: analysis.substring(0, 600), analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+      } catch (err) {
+        setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analyzing: false, error: err.message } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+      }
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleRefine = async () => {
@@ -479,9 +495,13 @@ export default function PlanTab({ showToast, onTabChange }) {
                 <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 1 }}>References</div>
                 <div className="row" style={{ gap: 6 }}>
                   <input className="input" style={{ flex: 1, fontSize: 11 }} value={refLinkInput} onChange={e => setRefLinkInput(e.target.value)}
-                    placeholder="Paste a URL — Claude will analyse the layout…"
+                    placeholder="Paste a URL…"
                     onKeyDown={e => { if (e.key === 'Enter' && refLinkInput.trim()) addReferenceLink(refLinkInput) }} />
-                  <button className="btn btn-ghost btn-sm" onClick={() => addReferenceLink(refLinkInput)}>+ Add</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => addReferenceLink(refLinkInput)}>+ URL</button>
+                  <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer' }} title="Upload a screenshot of your moodboard (Pinterest, etc.)">
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) addReferenceScreenshot(e.target.files[0]); e.target.value = '' }} />
+                    + Screenshot
+                  </label>
                 </div>
                 {referenceLinks.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
@@ -491,15 +511,32 @@ export default function PlanTab({ showToast, onTabChange }) {
                       const domain = isObj ? ref.domain : url
                       const analyzing = isObj ? ref.analyzing : false
                       const analysis = isObj ? ref.analysis : null
+                      const error = isObj ? ref.error : null
+                      const thumb = isObj ? ref.thumb : null
                       return (
-                        <div key={i} style={{ background: 'var(--surface2)', border: `1px solid ${analysis ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 3, padding: '5px 8px' }}>
+                        <div key={i} style={{ background: 'var(--surface2)', border: `1px solid ${analysis ? 'var(--silver-border)' : error ? 'var(--red-dim)' : 'var(--border)'}`, borderRadius: 3, padding: '5px 8px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {thumb && <img src={thumb} style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 2, flexShrink: 0 }} alt="" />}
                             {analyzing && <span className="spin" style={{ width: 8, height: 8, borderWidth: 1 }} />}
                             {!analyzing && analysis && <span style={{ color: 'var(--green)', fontSize: 9 }}>✓</span>}
-                            <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', textDecoration: 'none', flex: 1 }}>{domain}</a>
+                            {url
+                              ? <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', textDecoration: 'none', flex: 1 }}>{domain}</a>
+                              : <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text2)', flex: 1 }}>{domain}</span>
+                            }
                             <button onClick={() => { const next = referenceLinks.filter((_, j) => j !== i); setReferenceLinks(next); localStorage.setItem('kss_ref_links', JSON.stringify(next)) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', padding: 0, fontSize: 10 }}>×</button>
                           </div>
                           {analyzing && <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 3 }}>Analysing layout…</div>}
+                          {error && (
+                            <div style={{ fontSize: 9, color: 'var(--red)', fontFamily: 'var(--font-mono)', marginTop: 3, lineHeight: 1.4 }}>
+                              {error}
+                              {error.includes('screenshot') && (
+                                <label style={{ marginLeft: 6, color: 'var(--silver)', textDecoration: 'underline', cursor: 'pointer' }}>
+                                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) { const next = referenceLinks.filter((_, j) => j !== i); setReferenceLinks(next); localStorage.setItem('kss_ref_links', JSON.stringify(next)); addReferenceScreenshot(e.target.files[0]) }; e.target.value = '' }} />
+                                  Upload now
+                                </label>
+                              )}
+                            </div>
+                          )}
                           {analysis && <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{analysis}</div>}
                         </div>
                       )

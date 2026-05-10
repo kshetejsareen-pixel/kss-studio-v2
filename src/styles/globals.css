@@ -241,7 +241,7 @@ a { color: var(--silver); text-decoration: none; }
 }
 .main-body {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 80px 1fr;
   overflow: hidden;
 }
 
