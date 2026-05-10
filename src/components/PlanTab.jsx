@@ -118,8 +118,24 @@ export default function PlanTab({ showToast, onTabChange }) {
       : `${totalImgs} images, ${postCount} posts — 1 image per post.`
     const landscapes = state.images.filter(i => i.orientation === 'landscape').length
     const orientNote = landscapes > 0 ? `IMPORTANT: Never mix landscape and portrait in the same carousel.` : ''
-    const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Plan image assignments only. Respond with valid JSON only.`
-    const prompt = `Plan an Instagram calendar. ${totalImgs} images:\n${imgDesc}\n\nContext: ${globalCtx || 'None'}\nPosts needed: ${postCount}\nPost format: ${ratio}\n${distributionNote}\n${orientNote}\nDirector's notes: ${planningNotes.trim() || 'None'}\nReference links: ${referenceLinks.length ? referenceLinks.join(', ') : 'None'}\n\nReturn ONLY valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`
+    const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Your job is to decide which images go in which posts, strictly following the director's notes. Respond with valid JSON only — no commentary.`
+    const directorSection = planningNotes.trim()
+      ? `DIRECTOR'S NOTES — follow these precisely when choosing images:\n${planningNotes.trim()}`
+      : ''
+    const refsSection = referenceLinks.length
+      ? `Reference links (use for style/layout inspiration):\n${referenceLinks.join('\n')}`
+      : ''
+    const prompt = [
+      `Plan an Instagram grid of ${postCount} posts for ${handle}.`,
+      directorSection,
+      refsSection,
+      `Brand context: ${globalCtx || 'None'}`,
+      `Post format: ${ratio}`,
+      distributionNote,
+      orientNote,
+      `Available images (${totalImgs} total — use 1-based index):\n${imgDesc}`,
+      `Return ONLY a valid JSON array — no text before or after:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
+    ].filter(Boolean).join('\n\n')
     try {
       const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
       const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
