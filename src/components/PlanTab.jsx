@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_SONNET } from '../store.jsx'
+import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_SONNET, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -39,7 +39,7 @@ function getImgTransform(post) {
 }
 
 export default function PlanTab({ showToast, onTabChange }) {
-  const { state, set, resetPlan, setPlanItem } = useStore()
+  const { state, set, resetPlan, setPlanItem, updateImage } = useStore()
   const [postCount, setPostCount]   = useState(9)
   const [size, setSize]             = useState(SIZE_OPTIONS[1])
   const [mix, setMix]               = useState('mixed')
@@ -54,6 +54,7 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [showChecklist, setShowChecklist] = useState(false)
   const [excludedImgIds, setExcludedImgIds] = useState(new Set())
   const [hoveredThumb, setHoveredThumb]   = useState(null)
+  const [analysisProgress, setAnalysisProgress] = useState(null) // null | { done, total }
   const [directorOpen, setDirectorOpen]   = useState(false)
   const [referenceLinks, setReferenceLinks] = useState([])
   const [refLinkInput, setRefLinkInput]   = useState('')
@@ -104,6 +105,34 @@ export default function PlanTab({ showToast, onTabChange }) {
     setExcludedImgIds(prev => { const next = new Set(prev); if (next.has(imgId)) next.delete(imgId); else next.add(imgId); return next })
   }, [])
 
+  const analyzeImages = useCallback(async () => {
+    const key = state.settings.anthropicKey
+    if (!key) { showToast('Add Anthropic API key in Settings'); return }
+    const targets = state.images.filter(img => !img.visionDesc)
+    if (!targets.length) { showToast('All images already analysed ✓'); return }
+    setAnalysisProgress({ done: 0, total: targets.length })
+    const system = 'You are a photography analyst for an Instagram content planning tool. Your one-sentence descriptions help an AI plan the grid layout. Be specific — especially about background color and subject type.'
+    const userText = 'Describe this photo in ONE sentence for content planning. Cover: (1) subject type (person portrait / lifestyle scene / product / furniture / architecture / food / abstract), (2) background (white studio / light neutral / dark studio / natural outdoor / textured wall / colored backdrop), (3) mood (editorial luxury / candid lifestyle / clean commercial / etc.). Critical: be precise about background color.\n\nExample: "Editorial portrait of woman in ivory coat, dark charcoal studio background, luxury fashion mood."'
+    // Process in batches of 4 to avoid rate limits
+    let done = 0
+    for (let i = 0; i < targets.length; i += 4) {
+      const batch = targets.slice(i, i + 4)
+      await Promise.all(batch.map(async img => {
+        try {
+          updateImage(img.id, { visionAnalyzing: true })
+          const desc = await claudeVision(key, system, userText, img.dataUrl, M_HAIKU, 120)
+          updateImage(img.id, { visionDesc: desc.trim().replace(/^["']|["']$/g, ''), visionAnalyzing: false })
+        } catch {
+          updateImage(img.id, { visionAnalyzing: false })
+        }
+        done++
+        setAnalysisProgress({ done, total: targets.length })
+      }))
+    }
+    setAnalysisProgress(null)
+    showToast('Image analysis complete ✓')
+  }, [state.images, state.settings.anthropicKey, updateImage, showToast])
+
   const handleSetLayout = () => {
     const current = state.plan.length
     if (current === postCount) { showToast(`Already ${postCount} slots`); return }
@@ -127,10 +156,15 @@ export default function PlanTab({ showToast, onTabChange }) {
     const globalCtx = state.globalContext
     const ratio = `${size.w}×${size.h}`
     // Keep original 1-based indices intact so imgByIdx resolves correctly after planning.
-    // Excluded images are simply omitted from the list — Claude won't see or use them.
+    // Excluded images are omitted; vision descriptions are appended when available.
     const imgDesc = state.images.slice(0, 40)
-      .map((img, i) => excludedImgIds.has(img.id) ? null : `${i + 1}. ${img.name} [${img.orientation}]`)
+      .map((img, i) => {
+        if (excludedImgIds.has(img.id)) return null
+        const base = `${i + 1}. ${img.name} [${img.orientation}]`
+        return img.visionDesc ? `${base} — ${img.visionDesc}` : base
+      })
       .filter(Boolean).join('\n')
+    const analysedCount = state.images.filter(img => img.visionDesc && !excludedImgIds.has(img.id)).length
     const availableCount = state.images.filter(img => !excludedImgIds.has(img.id)).length
     const perPost = availableCount / postCount
     const distributionNote = perPost >= 2
@@ -163,7 +197,7 @@ export default function PlanTab({ showToast, onTabChange }) {
       `Post format: ${ratio} · Content mix: ${mixLabel}`,
       distributionNote,
       orientNote,
-      `Available images — ONLY use indices from this list (1-based, each index once only):\n${imgDesc}`,
+      `Available images — ONLY use indices from this list (1-based, each index once only)${analysedCount > 0 ? ` — ${analysedCount} have visual descriptions after the dash` : ''}:\n${imgDesc}`,
       `Return ONLY a JSON array of exactly ${postCount} objects:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
     ].filter(Boolean).join('\n\n')
     try {
@@ -407,20 +441,31 @@ export default function PlanTab({ showToast, onTabChange }) {
     const imgIdx = state.images.indexOf(img) + 1
     const isExcluded = excludedImgIds.has(img.id)
     const isHovered = hoveredThumb === img.id
+    const title = isExcluded
+      ? `${img.name} — excluded from planning`
+      : img.visionDesc ? `${img.name}\n${img.visionDesc}` : img.name
     return (
       <div key={img.id}
-        style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: `1px solid ${isExcluded ? 'rgba(180,60,60,.6)' : 'var(--border)'}`, cursor: isExcluded ? 'default' : 'grab', position: 'relative', opacity: isExcluded ? 0.38 : 1, transition: 'opacity .15s, border-color .15s' }}
+        style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: `1px solid ${isExcluded ? 'rgba(180,60,60,.6)' : img.visionDesc ? 'rgba(74,122,191,.4)' : 'var(--border)'}`, cursor: isExcluded ? 'default' : 'grab', position: 'relative', opacity: isExcluded ? 0.38 : 1, transition: 'opacity .15s, border-color .15s' }}
         draggable={!isExcluded}
         onDragStart={isExcluded ? undefined : e => { e.dataTransfer.setData('sidebar-img-id', img.id); e.dataTransfer.setData('unassigned-img', imgIdx); e.currentTarget.style.opacity = '.5' }}
         onDragEnd={e => e.currentTarget.style.opacity = '1'}
         onMouseEnter={() => setHoveredThumb(img.id)}
         onMouseLeave={() => setHoveredThumb(null)}
-        title={isExcluded ? `${img.name} — excluded from planning` : img.name}>
+        title={title}>
         <img src={img.dataUrl} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        {img.orientation === 'landscape' && !isHovered && !isExcluded && (
+        {img.visionAnalyzing && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="spin" style={{ width: 8, height: 8, borderWidth: 1 }} />
+          </div>
+        )}
+        {img.visionDesc && !isHovered && !isExcluded && !img.visionAnalyzing && (
+          <span style={{ position: 'absolute', bottom: 1, left: 1, background: 'rgba(74,122,191,.85)', color: '#fff', fontSize: 6, padding: '1px 3px', borderRadius: 1, fontFamily: 'var(--font-mono)' }}>✦</span>
+        )}
+        {img.orientation === 'landscape' && !isHovered && !isExcluded && !img.visionDesc && !img.visionAnalyzing && (
           <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(74,122,191,.9)', color: '#fff', fontSize: 6, padding: '1px 2px', borderRadius: 1 }}>L</span>
         )}
-        {(isHovered || isExcluded) && (
+        {(isHovered || isExcluded) && !img.visionAnalyzing && (
           <button onClick={e => { e.stopPropagation(); toggleExclude(img.id) }}
             style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: isExcluded ? 'rgba(74,122,191,.9)' : 'rgba(138,58,58,.88)', color: '#fff', border: 'none', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0, fontWeight: 'bold' }}>
             {isExcluded ? '+' : '–'}
@@ -719,6 +764,18 @@ export default function PlanTab({ showToast, onTabChange }) {
             <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.max(0.5, +(s - 0.2).toFixed(1)))}>−</button>
             <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.min(2.5, +(s + 0.2).toFixed(1)))}>+</button>
           </div>
+          {state.images.length > 0 && (
+            <button
+              className="btn btn-ghost btn-xs"
+              style={{ width: '100%', marginBottom: 6, fontFamily: 'var(--font-mono)', fontSize: 9, justifyContent: 'center' }}
+              onClick={analyzeImages}
+              disabled={!!analysisProgress}
+              title="Run Claude Vision on all images so the planner knows subject, background, and mood">
+              {analysisProgress
+                ? `✦ Analysing… ${analysisProgress.done}/${analysisProgress.total}`
+                : `✦ Analyse Images for Planning (${state.images.filter(i => i.visionDesc).length}/${state.images.length} done)`}
+            </button>
+          )}
           {excludedImgIds.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '3px 6px', background: 'rgba(138,58,58,.12)', border: '1px solid rgba(180,60,60,.3)', borderRadius: 3 }}>
               <span style={{ fontSize: 9, color: 'var(--red, #c06)', fontFamily: 'var(--font-mono)' }}>{excludedImgIds.size} excluded from planning</span>

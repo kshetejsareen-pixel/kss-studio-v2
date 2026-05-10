@@ -57,6 +57,7 @@ function reducer(state, action) {
       return { ...state, plan }
     }
     case 'RESET_PLAN': return { ...state, plan: action.plan, inspectIdx: null }
+    case 'UPDATE_IMAGE': return { ...state, images: state.images.map(img => img.id === action.id ? { ...img, ...action.payload } : img) }
     default: return state
   }
 }
@@ -71,9 +72,10 @@ export function StoreProvider({ children }) {
   const setSettings = useCallback((payload) => dispatch({ type: 'SET_SETTINGS', payload }), [])
   const setPlanItem = useCallback((idx, payload) => dispatch({ type: 'SET_PLAN_ITEM', idx, payload }), [])
   const resetPlan = useCallback((plan) => dispatch({ type: 'RESET_PLAN', plan }), [])
+  const updateImage = useCallback((id, payload) => dispatch({ type: 'UPDATE_IMAGE', id, payload }), [])
 
   return (
-    <StoreContext.Provider value={{ state, set, merge, setSettings, setPlanItem, resetPlan }}>
+    <StoreContext.Provider value={{ state, set, merge, setSettings, setPlanItem, resetPlan, updateImage }}>
       {children}
     </StoreContext.Provider>
   )
