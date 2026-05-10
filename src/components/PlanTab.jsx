@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_SONNET } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -127,29 +127,34 @@ export default function PlanTab({ showToast, onTabChange }) {
       : `${totalImgs} images, ${postCount} posts — 1 image per post.`
     const landscapes = state.images.filter(i => i.orientation === 'landscape').length
     const orientNote = landscapes > 0 ? `IMPORTANT: Never mix landscape and portrait in the same carousel.` : ''
-    const system = `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}). Your job is to decide which images go in which posts, strictly following the director's notes. Respond with valid JSON only — no commentary.`
-    const directorSection = planningNotes.trim()
-      ? `DIRECTOR'S NOTES — follow these precisely when choosing images:\n${planningNotes.trim()}`
-      : ''
+    const mixLabel = mix === 'carousels' ? 'carousels heavy — most posts should be carousels with multiple slides'
+      : mix === 'stills' ? 'stills only — every post is a single image, no carousels'
+      : 'mixed — vary between singles and carousels'
     const analysedRefs = referenceLinks.filter(l => l.analysis)
     const refsSection = analysedRefs.length
-      ? `Reference layouts (Claude has analysed these — mirror their structure):\n${analysedRefs.map(l => `• ${l.domain}: ${l.analysis}`).join('\n\n')}`
+      ? `REFERENCE GRID ANALYSIS — apply this rhythm and content mix to your plan:\n${analysedRefs.map(l => `• ${l.domain}: ${l.analysis}`).join('\n\n')}`
       : referenceLinks.length
-        ? `Reference URLs (not yet analysed — use as general style context):\n${referenceLinks.map(l => l.url || l).join('\n')}`
+        ? `Reference context:\n${referenceLinks.map(l => l.url || l).join('\n')}`
         : ''
+    const system = [
+      `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}).`,
+      planningNotes.trim() ? `DIRECTOR'S MANDATE — follow these instructions precisely, they override everything else:\n${planningNotes.trim()}` : '',
+      `HARD RULES — never break these:
+- Every image index must appear AT MOST ONCE across all posts and all carousel slides. No repeats whatsoever.
+- Respond with ONLY a valid JSON array. Zero text before or after. No explanation, no commentary.`,
+    ].filter(Boolean).join('\n\n')
     const prompt = [
       `Plan an Instagram grid of ${postCount} posts for ${handle}.`,
-      directorSection,
       refsSection,
       `Brand context: ${globalCtx || 'None'}`,
-      `Post format: ${ratio}`,
+      `Post format: ${ratio} · Content mix: ${mixLabel}`,
       distributionNote,
       orientNote,
-      `Available images (${totalImgs} total — use 1-based index):\n${imgDesc}`,
-      `Return ONLY a valid JSON array — no text before or after:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
+      `Available images (${totalImgs} total — use 1-based index, each index once only):\n${imgDesc}`,
+      `Return ONLY a valid JSON array:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
     ].filter(Boolean).join('\n\n')
     try {
-      const raw = await claudeCall(key, system, prompt, M_HAIKU, 4000)
+      const raw = await claudeCall(key, system, prompt, M_SONNET, 4000)
       const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
