@@ -105,23 +105,40 @@ export default function PlanTab({ showToast, onTabChange }) {
     setExcludedImgIds(prev => { const next = new Set(prev); if (next.has(imgId)) next.delete(imgId); else next.add(imgId); return next })
   }, [])
 
+  // Detect white-bg from either structured visionBg tag or free-text description
+  const isWhiteBg = useCallback(img => {
+    if (img.visionBg) return img.visionBg === 'white-studio'
+    if (!img.visionDesc) return false
+    const d = img.visionDesc.toLowerCase()
+    return d.includes('white') && (d.includes('background') || d.includes('studio') || d.includes('backdrop') || d.includes('surface'))
+  }, [])
+
   const analyzeImages = useCallback(async () => {
     const key = state.settings.anthropicKey
     if (!key) { showToast('Add Anthropic API key in Settings'); return }
     const targets = state.images.filter(img => !img.visionDesc)
     if (!targets.length) { showToast('All images already analysed ✓'); return }
     setAnalysisProgress({ done: 0, total: targets.length })
-    const system = 'You are a photography analyst for an Instagram content planning tool. Your one-sentence descriptions help an AI plan the grid layout. Be specific — especially about background color and subject type.'
-    const userText = 'Describe this photo in ONE sentence for content planning. Cover: (1) subject type (person portrait / lifestyle scene / product / furniture / architecture / food / abstract), (2) background (white studio / light neutral / dark studio / natural outdoor / textured wall / colored backdrop), (3) mood (editorial luxury / candid lifestyle / clean commercial / etc.). Critical: be precise about background color.\n\nExample: "Editorial portrait of woman in ivory coat, dark charcoal studio background, luxury fashion mood."'
-    // Process in batches of 4 to avoid rate limits
+    const system = 'You are a photography analyst for Instagram content planning. Be precise about background and subject type — these are used to filter images by category.'
+    const userText = `Analyse this photo. Respond in EXACTLY this format (no other text):
+Subject: [person-portrait / group-portrait / product-object / lifestyle-scene / architecture / abstract]
+Background: [white-studio / light-neutral / dark-studio / natural-outdoor / textured-wall / colored]
+Mood: [editorial-luxury / clean-commercial / candid-lifestyle / architectural]
+Summary: [one concise sentence describing the image]`
     let done = 0
     for (let i = 0; i < targets.length; i += 4) {
       const batch = targets.slice(i, i + 4)
       await Promise.all(batch.map(async img => {
         try {
           updateImage(img.id, { visionAnalyzing: true })
-          const desc = await claudeVision(key, system, userText, img.dataUrl, M_HAIKU, 120)
-          updateImage(img.id, { visionDesc: desc.trim().replace(/^["']|["']$/g, ''), visionAnalyzing: false })
+          const raw = await claudeVision(key, system, userText, img.dataUrl, M_HAIKU, 150)
+          const bgMatch = raw.match(/Background:\s*([a-z-]+)/i)
+          const subjMatch = raw.match(/Subject:\s*([a-z-]+)/i)
+          const summaryMatch = raw.match(/Summary:\s*(.+)/i)
+          const visionBg = bgMatch ? bgMatch[1].toLowerCase() : 'unknown'
+          const visionSubject = subjMatch ? subjMatch[1].toLowerCase() : 'unknown'
+          const visionDesc = summaryMatch ? summaryMatch[1].trim().replace(/^["']|["']$/g, '') : raw.trim().replace(/^["']|["']$/g, '')
+          updateImage(img.id, { visionDesc, visionBg, visionSubject, visionAnalyzing: false })
         } catch {
           updateImage(img.id, { visionAnalyzing: false })
         }
@@ -130,8 +147,9 @@ export default function PlanTab({ showToast, onTabChange }) {
       }))
     }
     setAnalysisProgress(null)
-    showToast('Image analysis complete ✓')
-  }, [state.images, state.settings.anthropicKey, updateImage, showToast])
+    const whiteBgCount = state.images.filter(isWhiteBg).length
+    showToast(`Analysis complete ✓ — ${whiteBgCount} white-background images detected`)
+  }, [state.images, state.settings.anthropicKey, updateImage, showToast, isWhiteBg])
 
   const handleSetLayout = () => {
     const current = state.plan.length
@@ -155,17 +173,25 @@ export default function PlanTab({ showToast, onTabChange }) {
     const handle = state.settings.handle || '@kshetejsareenstudios'
     const globalCtx = state.globalContext
     const ratio = `${size.w}×${size.h}`
+    // Client-side enforce "no white background" if director notes say so.
+    // This is done here rather than relying on Claude to interpret descriptions —
+    // LLMs can't reliably match natural-language color constraints to free-text descriptions.
+    const notesLower = planningNotes.toLowerCase()
+    const autoExcludeWhiteBg = /no white|don.?t use white|avoid white|without white|exclude white/i.test(planningNotes)
+
     // Keep original 1-based indices intact so imgByIdx resolves correctly after planning.
-    // Excluded images are omitted; vision descriptions are appended when available.
+    let autoExcludedCount = 0
     const imgDesc = state.images.slice(0, 40)
       .map((img, i) => {
         if (excludedImgIds.has(img.id)) return null
+        if (autoExcludeWhiteBg && isWhiteBg(img)) { autoExcludedCount++; return null }
         const base = `${i + 1}. ${img.name} [${img.orientation}]`
-        return img.visionDesc ? `${base} — ${img.visionDesc}` : base
+        const tag = img.visionBg && img.visionBg !== 'unknown' ? ` [bg:${img.visionBg}]` : ''
+        return img.visionDesc ? `${base}${tag} — ${img.visionDesc}` : base
       })
       .filter(Boolean).join('\n')
     const analysedCount = state.images.filter(img => img.visionDesc && !excludedImgIds.has(img.id)).length
-    const availableCount = state.images.filter(img => !excludedImgIds.has(img.id)).length
+    const availableCount = state.images.filter(img => !excludedImgIds.has(img.id) && !(autoExcludeWhiteBg && isWhiteBg(img))).length
     const perPost = availableCount / postCount
     const distributionNote = perPost >= 2
       ? `${availableCount} available images across ${postCount} posts — use CAROUSELS (~${Math.ceil(perPost)} slides each).`
@@ -241,7 +267,8 @@ export default function PlanTab({ showToast, onTabChange }) {
         console.warn('[KSS Plan] All imageIndexes resolved to null. Raw data:', parsed)
         showToast('Plan set but images not matched — check console')
       } else {
-        showToast(`Layout ready — ${filled} of ${finalPlan.length} posts`)
+        const autoNote = autoExcludedCount > 0 ? ` (${autoExcludedCount} white-bg auto-excluded)` : ''
+        showToast(`Layout ready — ${filled} of ${finalPlan.length} posts${autoNote}`)
       }
     } catch (e) { showToast('Error: ' + e.message); console.error(e) }
     finally { setPlanning(false) }
@@ -460,7 +487,9 @@ export default function PlanTab({ showToast, onTabChange }) {
           </div>
         )}
         {img.visionDesc && !isHovered && !isExcluded && !img.visionAnalyzing && (
-          <span style={{ position: 'absolute', bottom: 1, left: 1, background: 'rgba(74,122,191,.85)', color: '#fff', fontSize: 6, padding: '1px 3px', borderRadius: 1, fontFamily: 'var(--font-mono)' }}>✦</span>
+          <span style={{ position: 'absolute', bottom: 1, left: 1, background: isWhiteBg(img) ? 'rgba(180,60,60,.85)' : 'rgba(74,122,191,.85)', color: '#fff', fontSize: 6, padding: '1px 3px', borderRadius: 1, fontFamily: 'var(--font-mono)' }}>
+            {isWhiteBg(img) ? '⊘' : '✦'}
+          </span>
         )}
         {img.orientation === 'landscape' && !isHovered && !isExcluded && !img.visionDesc && !img.visionAnalyzing && (
           <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(74,122,191,.9)', color: '#fff', fontSize: 6, padding: '1px 2px', borderRadius: 1 }}>L</span>
@@ -765,16 +794,31 @@ export default function PlanTab({ showToast, onTabChange }) {
             <button className="btn btn-ghost btn-xs" onClick={() => setThumbScale(s => Math.min(2.5, +(s + 0.2).toFixed(1)))}>+</button>
           </div>
           {state.images.length > 0 && (
-            <button
-              className="btn btn-ghost btn-xs"
-              style={{ width: '100%', marginBottom: 6, fontFamily: 'var(--font-mono)', fontSize: 9, justifyContent: 'center' }}
-              onClick={analyzeImages}
-              disabled={!!analysisProgress}
-              title="Run Claude Vision on all images so the planner knows subject, background, and mood">
-              {analysisProgress
-                ? `✦ Analysing… ${analysisProgress.done}/${analysisProgress.total}`
-                : `✦ Analyse Images for Planning (${state.images.filter(i => i.visionDesc).length}/${state.images.length} done)`}
-            </button>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+              <button
+                className="btn btn-ghost btn-xs"
+                style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 9, justifyContent: 'center' }}
+                onClick={analyzeImages}
+                disabled={!!analysisProgress}
+                title="Run Claude Vision on all images so the planner knows subject, background, and mood">
+                {analysisProgress
+                  ? `Analysing… ${analysisProgress.done}/${analysisProgress.total}`
+                  : `✦ Analyse (${state.images.filter(i => i.visionDesc).length}/${state.images.length})`}
+              </button>
+              {(() => {
+                const whiteBgImgs = state.images.filter(img => isWhiteBg(img) && !excludedImgIds.has(img.id))
+                if (!whiteBgImgs.length) return null
+                return (
+                  <button
+                    className="btn btn-ghost btn-xs"
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'rgba(180,60,60,.9)', borderColor: 'rgba(180,60,60,.4)' }}
+                    onClick={() => setExcludedImgIds(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.id)); return next })}
+                    title={`Exclude ${whiteBgImgs.length} white-background images from planning`}>
+                    ⊘ white bg ({whiteBgImgs.length})
+                  </button>
+                )
+              })()}
+            </div>
           )}
           {excludedImgIds.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '3px 6px', background: 'rgba(138,58,58,.12)', border: '1px solid rgba(180,60,60,.3)', borderRadius: 3 }}>
