@@ -147,6 +147,30 @@ export async function claudeVision(key, system, userText, imageDataUrl, model = 
   return text
 }
 
+export async function claudeCallWithImages(key, system, userText, imageDataUrls = [], model = M_SONNET, maxTokens = 4000) {
+  if (!key) throw new Error('No API key — add in Settings')
+  const content = []
+  for (const dataUrl of imageDataUrls) {
+    const resized = await resizeImage(dataUrl, 1200)
+    const b64 = extractBase64(resized)
+    if (b64) content.push({ type: 'image', source: { type: 'base64', media_type: b64.mediaType, data: b64.data } })
+  }
+  content.push({ type: 'text', text: userText })
+  const r = await fetch(PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] }),
+  })
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}))
+    throw new Error(e.error?.message || `HTTP ${r.status}`)
+  }
+  const d = await r.json()
+  const text = d.content?.find(b => b.type === 'text')?.text
+  if (!text) throw new Error('Empty response')
+  return text
+}
+
 export async function claudeResearch(key, brandName) {
   if (!key) throw new Error('No API key')
   const system = `You are a brand researcher for a luxury photography studio. Return a 3-4 sentence profile covering: what the brand does, visual aesthetic, target audience, key people, location. Factual and specific.`

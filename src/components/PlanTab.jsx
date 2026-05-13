@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeAnalyzeLayout, claudeVision, M_SONNET, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, M_SONNET, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -207,6 +207,11 @@ Summary: [one concise sentence describing the image]`
       : referenceLinks.length
         ? `Reference context:\n${referenceLinks.map(l => l.url || l).join('\n')}`
         : ''
+    // Collect uploaded reference screenshots — passed as actual images to the API
+    const refScreenshots = referenceLinks.filter(l => l.thumb).map(l => l.thumb)
+    const refVisualNote = refScreenshots.length
+      ? `REFERENCE GRID IMAGES ATTACHED: ${refScreenshots.length} reference screenshot(s) are embedded above as images. Study them carefully — your image assignments must produce a grid that mirrors their exact: layout rhythm, alternating pattern (e.g. portrait → product → portrait), content type sequencing, and visual balance.`
+      : ''
     const system = [
       `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}).`,
       planningNotes.trim() ? `DIRECTOR'S MANDATE — follow these instructions precisely, they override everything else:\n${planningNotes.trim()}` : '',
@@ -218,6 +223,7 @@ Summary: [one concise sentence describing the image]`
     ].filter(Boolean).join('\n\n')
     const prompt = [
       `Plan an Instagram grid of ${postCount} posts for ${handle}.`,
+      refVisualNote,
       refsSection,
       `Brand context: ${globalCtx || 'None'}`,
       `Post format: ${ratio} · Content mix: ${mixLabel}`,
@@ -227,7 +233,9 @@ Summary: [one concise sentence describing the image]`
       `Return ONLY a JSON array of exactly ${postCount} objects:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
     ].filter(Boolean).join('\n\n')
     try {
-      const raw = await claudeCall(key, system, prompt, M_SONNET, 4000)
+      const raw = refScreenshots.length
+        ? await claudeCallWithImages(key, system, prompt, refScreenshots, M_SONNET, 4000)
+        : await claudeCall(key, system, prompt, M_SONNET, 4000)
       const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
