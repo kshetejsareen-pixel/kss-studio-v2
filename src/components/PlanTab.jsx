@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, M_SONNET, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, resizeImage, M_SONNET, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -53,6 +53,9 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
   const [excludedImgIds, setExcludedImgIds] = useState(new Set())
+  const [excludedImgNames, setExcludedImgNames] = useState(() => {
+    try { const s = localStorage.getItem('kss_excluded_names'); return new Set(s ? JSON.parse(s) : []) } catch { return new Set() }
+  })
   const [hoveredThumb, setHoveredThumb]   = useState(null)
   const [analysisProgress, setAnalysisProgress] = useState(null) // null | { done, total }
   const [directorOpen, setDirectorOpen]   = useState(false)
@@ -84,6 +87,17 @@ export default function PlanTab({ showToast, onTabChange }) {
     } catch {}
   }, [])
 
+  // Restore exclusions by filename whenever images change (IDs are session-scoped)
+  useEffect(() => {
+    if (!state.images.length || !excludedImgNames.size) return
+    setExcludedImgIds(prev => {
+      const next = new Set(prev)
+      let changed = false
+      state.images.forEach(img => { if (excludedImgNames.has(img.name) && !next.has(img.id)) { next.add(img.id); changed = true } })
+      return changed ? next : prev
+    })
+  }, [state.images]) // eslint-disable-line
+
   useEffect(() => {
     const el = gridScrollRef.current
     if (!el) return
@@ -102,8 +116,17 @@ export default function PlanTab({ showToast, onTabChange }) {
   }, [state.images])
 
   const toggleExclude = useCallback(imgId => {
+    const img = state.images.find(im => im.id === imgId)
     setExcludedImgIds(prev => { const next = new Set(prev); if (next.has(imgId)) next.delete(imgId); else next.add(imgId); return next })
-  }, [])
+    if (img) {
+      setExcludedImgNames(prev => {
+        const next = new Set(prev)
+        if (next.has(img.name)) next.delete(img.name); else next.add(img.name)
+        localStorage.setItem('kss_excluded_names', JSON.stringify([...next]))
+        return next
+      })
+    }
+  }, [state.images])
 
   // Detect white-bg from either structured visionBg tag or free-text description
   const isWhiteBg = useCallback(img => {
@@ -310,26 +333,26 @@ Summary: [one concise sentence describing the image]`
   const addReferenceScreenshot = async (file) => {
     if (!file || !file.type.startsWith('image/')) return
     const key = state.settings.anthropicKey
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result
-      const thumb = dataUrl
-      const entry = { url: null, domain: file.name.replace(/\.[^.]+$/, ''), analysis: null, analyzing: true, error: null, thumb }
-      setReferenceLinks(prev => [...prev, entry])
-      if (!key) {
-        setReferenceLinks(prev => { const next = [...prev]; next[next.length - 1] = { ...next[next.length - 1], analyzing: false, error: 'Add API key in Settings' }; localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
-        return
-      }
-      try {
-        const system = 'You are a visual content strategist analysing moodboard screenshots for Instagram grid planning. Be concise and specific.'
-        const userText = 'Analyse this screenshot and describe the visual layout: grid pattern, content types (product detail, portrait, lifestyle, etc.), dominant image ratio, and any notable sequencing or colour story. Be actionable for an Instagram content planner.'
-        const analysis = await claudeVision(key, system, userText, dataUrl)
-        setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analysis: analysis.substring(0, 600), analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
-      } catch (err) {
-        setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analyzing: false, error: err.message } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
-      }
+    // Read file, then immediately resize — never store full-res base64 in state or localStorage
+    // (a Retina screenshot can be 10-20 MB, which exceeds localStorage quota and freezes the tab)
+    const rawDataUrl = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file)
+    })
+    const thumb = await resizeImage(rawDataUrl, 800)
+    const entry = { url: null, domain: file.name.replace(/\.[^.]+$/, ''), analysis: null, analyzing: true, error: null, thumb }
+    setReferenceLinks(prev => [...prev, entry])
+    if (!key) {
+      setReferenceLinks(prev => { const next = [...prev]; next[next.length - 1] = { ...next[next.length - 1], analyzing: false, error: 'Add API key in Settings' }; localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+      return
     }
-    reader.readAsDataURL(file)
+    try {
+      const system = 'You are a visual content strategist analysing moodboard screenshots for Instagram grid planning. Be concise and specific.'
+      const userText = 'Analyse this screenshot and describe the visual layout: grid pattern, content types (product detail, portrait, lifestyle, etc.), dominant image ratio, and any notable sequencing or colour story. Be actionable for an Instagram content planner.'
+      const analysis = await claudeVision(key, system, userText, thumb)
+      setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analysis: analysis.substring(0, 600), analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+    } catch (err) {
+      setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analyzing: false, error: err.message } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+    }
   }
 
   const handleRefine = async () => {
@@ -820,7 +843,10 @@ Summary: [one concise sentence describing the image]`
                   <button
                     className="btn btn-ghost btn-xs"
                     style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'rgba(180,60,60,.9)', borderColor: 'rgba(180,60,60,.4)' }}
-                    onClick={() => setExcludedImgIds(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.id)); return next })}
+                    onClick={() => {
+                      setExcludedImgIds(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.id)); return next })
+                      setExcludedImgNames(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.name)); localStorage.setItem('kss_excluded_names', JSON.stringify([...next])); return next })
+                    }}
                     title={`Exclude ${whiteBgImgs.length} white-background images from planning`}>
                     ⊘ white bg ({whiteBgImgs.length})
                   </button>
@@ -830,8 +856,8 @@ Summary: [one concise sentence describing the image]`
           )}
           {excludedImgIds.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '3px 6px', background: 'rgba(138,58,58,.12)', border: '1px solid rgba(180,60,60,.3)', borderRadius: 3 }}>
-              <span style={{ fontSize: 9, color: 'var(--red, #c06)', fontFamily: 'var(--font-mono)' }}>{excludedImgIds.size} excluded from planning</span>
-              <button onClick={() => setExcludedImgIds(new Set())} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', padding: 0 }}>clear</button>
+              <span style={{ fontSize: 9, color: 'var(--red, #c06)', fontFamily: 'var(--font-mono)' }}>{excludedImgIds.size} excluded · remembered</span>
+              <button onClick={() => { setExcludedImgIds(new Set()); setExcludedImgNames(new Set()); localStorage.removeItem('kss_excluded_names') }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', padding: 0 }}>clear</button>
             </div>
           )}
           <div style={{ overflowY: 'auto', flex: 1 }}>
