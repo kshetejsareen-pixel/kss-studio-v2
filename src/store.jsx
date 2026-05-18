@@ -178,7 +178,16 @@ export async function claudeCallWithImages(key, system, userText, imageDataUrls 
 
 export async function claudeResearch(key, brandName) {
   if (!key) throw new Error('No API key')
-  const system = `You are a brand researcher for a luxury photography studio. Return a 3-4 sentence profile covering: what the brand does, visual aesthetic, target audience, key people, location. Factual and specific.`
+  const system = `You are a brand researcher preparing a creative brief for a luxury photography studio about to shoot for a client.
+Return a structured profile using EXACTLY this format — no extra text before or after:
+
+BRAND: [name]
+WHAT: [what they make/sell/do — 1 sentence]
+AESTHETIC: [visual language: colours, materials, mood, design philosophy — 1 sentence]
+AUDIENCE: [who they target — demographics and psychographics — 1 sentence]
+VOICE: [how they write and speak — their tone, sentence rhythm, word choices — 1 sentence. E.g. "Understated and architectural. Short declarative lines. Form over excess." or "Warm and artisanal. Story-driven. Emphasises craft and the human hand."]
+LOCATION: [city / country]`
+
   // Try with web search first
   try {
     const r = await fetch(PROXY, {
@@ -186,24 +195,24 @@ export async function claudeResearch(key, brandName) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: M_SONNET,
-        max_tokens: 600,
+        max_tokens: 700,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         system,
-        messages: [{ role: 'user', content: `Research "${brandName}" for Instagram content creation. Include positioning, visual style, founders, location.` }],
+        messages: [{ role: 'user', content: `Research "${brandName}" and return the structured brand profile. Search their website and Instagram if available.` }],
       }),
     })
     if (!r.ok) throw new Error('web search blocked')
     const d = await r.json()
-    const text = d.content?.filter(b => b.type === 'text').map(b => b.text).join(' ')
-    if (text) return text.trim().substring(0, 400)
+    const text = d.content?.filter(b => b.type === 'text').map(b => b.text).join(' ').trim()
+    if (text) return text.substring(0, 700)
   } catch { /* fall through to knowledge-only */ }
 
   // Fallback — knowledge only
   return await claudeCall(
     key,
     system,
-    `Provide a brand profile for "${brandName}" for Instagram content creation. If you don't have specific knowledge, provide general context about this type of brand.`,
-    M_SONNET, 400
+    `Return the structured brand profile for "${brandName}". If you don't have specific knowledge, infer from the brand name and any context clues — provide a plausible profile for this type of brand.`,
+    M_SONNET, 700
   )
 }
 

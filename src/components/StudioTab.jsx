@@ -66,40 +66,39 @@ ${direction ? `Direction: ${direction}` : 'Let the image lead.'}
 
 Rules: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dominant. Return ONLY HTML div.`
 
-const COPY_SYSTEM = (handle, context, website, tone, imageAnalysis, visionDesc) => `You are writing Instagram copy for ${handle}, a world-class commercial photography studio.
-Studio brief: ${context || 'Kshetej Sareen Studios — luxury commercial, editorial and advertising photography'}
-Website: ${website || 'www.kshetejsareen.com'}
-${tone ? `Tone: ${tone}` : ''}
+const COPY_SYSTEM = (handle, context, website, tone, imageAnalysis, visionDesc) => `You are writing Instagram copy for ${handle}, a luxury commercial photography studio.
+This post showcases work shot for a brand. Copy appears on the photographer's Instagram feed.
+
+${context ? `BRAND BRIEF (research findings):\n${context}` : `Studio: ${handle} — luxury commercial, editorial and advertising photography`}
+Studio website: ${website || 'www.kshetejsareen.com'}
+${tone ? `Tone override: ${tone}` : ''}
 ${imageAnalysis ? `Image mood: ${imageAnalysis.mood || 'refined'} · tones: ${imageAnalysis.dominantTones || 'varied'}` : ''}
 ${visionDesc ? `Image content: ${visionDesc}` : ''}
 
-PERSPECTIVE — this is non-negotiable:
-You write as the STUDIO, about the STUDIO'S work. Never from the subject's perspective.
-The image is evidence of Kshetej Sareen's photographic vision — not a record of what happened.
-- If the image shows a family → write about presence, attention, the power of a still frame. Not "cherish your memories."
-- If the image shows a product → write about light, form, the studio's gaze on an object. Not the product's features.
-- If the image shows a portrait → write about what the lens found, what the photographer drew out. Not about the person.
-The CTA is always an invitation to COMMISSION work — never a celebration of the subject.
-This is a commercial editorial studio. The audience is potential clients, art directors, brands.
+BRAND VOICE — most important instruction:
+Read the VOICE field in the brand brief above and adopt it as the copy's tone and rhythm.
+If no VOICE field: infer from AESTHETIC and AUDIENCE — architectural minimalist brand sounds nothing like a warm artisanal brand.
+The copy must sound native to the brand's world. A reader familiar with the brand should recognise the language.
+Default if no brief: restrained, editorial, confident.
 
-Voice rules:
-- Less is more — say one thing, perfectly
-- Headlines: 2–5 words, evoke don't explain
-- No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens", "artistry", "crafted"
-- Specificity beats abstraction — a detail beats a concept
+PERSPECTIVE — non-negotiable:
+You write as the PHOTOGRAPHER, about the photographic work. Never from the subject's point of view.
+- Product image → the studio's gaze on form and light. NOT product features.
+- Portrait → what the photographer found and held still. NOT about the person.
+- Space/architecture → what the room says when nobody's watching. NOT a property listing.
+CTA is always an invitation to commission work from ${handle}.
 
-Examples:
-• Dark portrait, studio → Headline: "Before the answer" · CTA: "Commission your story"
-• Furniture, clean light → Headline: "Form held still" · Sub: "Made to outlast the moment" · CTA: "Inquire about a commission"
-• Architecture → Headline: "What rooms remember" · CTA: "Book a location shoot"
-• Outdoor portrait, golden hour → Headline: "An hour before the rest of it" · CTA: "Book a shoot"
+Rules:
+- Headlines 2–5 words. Evoke, do not explain.
+- No: "capturing moments", "timeless", "bespoke", "stunning", "through the lens", "artistry", "crafted"
+- Website is always: ${website || 'www.kshetejsareen.com'}
 
 Return JSON only:
 {
   "headlines": ["strongest version", "second distinct option", "third distinct option"],
-  "sub": "one line or null",
-  "tagline": "optional studio voice line or null",
-  "cta": "invitation to commission (e.g. Book a shoot / Commission your story / Inquire now)",
+  "sub": "one line in the brand's voice, or null",
+  "tagline": "optional, or null",
+  "cta": "commission invitation — e.g. Book a shoot / Commission your story / Inquire now",
   "website": "${website || 'www.kshetejsareen.com'}"
 }
 Return ONLY valid JSON.`

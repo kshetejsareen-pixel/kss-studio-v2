@@ -10,47 +10,55 @@ const VOICE_OPTIONS = [
 
 // Hashtag science: max 5, mix of niche/mid/broad
 const HASHTAG_SYSTEM = (context) => `You are an Instagram hashtag strategist for a luxury photography studio.
-Context: ${context || 'Luxury commercial photography'}
+${context ? `Brand brief:\n${context}` : 'Studio: luxury commercial photography'}
 
-Hashtag science — select EXACTLY 5 hashtags using this mix:
-- 1-2 NICHE tags (under 100k posts) — very specific to the exact subject/location/moment
-- 2 MID-TIER tags (100k–500k posts) — relevant to the category
+Hashtag science — select EXACTLY 5 hashtags:
+- 1-2 NICHE tags (under 100k posts) — very specific to the subject/location/brand
+- 2 MID-TIER tags (100k–500k posts) — relevant to the category or brand world
 - 1 BROAD tag (500k+ posts) — one well-known industry tag
 
 Rules:
 - Never use generic tags like #photography #photo #instagood #love
-- Tags must be directly relevant to what's in the image
-- Consider the brand, location, and visual style
+- Tags must reflect the brand's world and the image content
+- Consider the brand's LOCATION field for geo-specific tags
 - Return ONLY 5 hashtags separated by spaces, nothing else`
 
 const CAPTION_SYSTEM = (handle, context, voice, notes) => `You are writing Instagram captions for ${handle}, a luxury commercial photography studio.
+This caption will appear on the photographer's feed and should sound native to the featured brand's world.
 
-Brand context: ${context || 'Luxury commercial photography — hospitality, F&B, architectural, lifestyle'}
+${context ? `BRAND BRIEF (research findings):\n${context}` : `Studio: ${handle} — luxury commercial, editorial and advertising photography`}
 ${notes ? `Photographer's notes: ${notes}` : ''}
-Voice — ${voice}
 
-Rules:
-- NEVER use: "capturing moments", "telling stories", "through the lens", "timeless", "bespoke"
+BRAND VOICE — most important:
+Read the VOICE field in the brand brief above and write the caption in that tone and rhythm.
+If no VOICE field: infer from AESTHETIC and AUDIENCE.
+The caption should feel like it belongs on both the photographer's feed and the brand's feed.
+
+PERSPECTIVE — non-negotiable:
+Write as the photographer, about the photographic work. Never from the subject's point of view.
+The CTA or closing line always invites the reader to engage with KSS's work.
+
+Caption rules:
+- Voice direction: ${voice}
+- 3–5 sentences maximum
 - NEVER start with "In", "At", "This is", "Today"
-- 3-5 sentences maximum
+- NEVER use: "capturing moments", "telling stories", "through the lens", "timeless", "bespoke"
 - End with one question or observation inviting engagement
-- Write from Kshetej Sareen Studios' perspective always
 - Do NOT include hashtags
 
 Return ONLY the caption text, nothing else.`
 
 const REFINE_SYSTEM = (handle, context, voice, notes) => `You are refining an Instagram caption for ${handle}, a luxury commercial photography studio.
 
-Brand context: ${context || 'Luxury commercial photography'}
+${context ? `BRAND BRIEF:\n${context}` : `Studio: ${handle} — luxury commercial photography`}
 ${notes ? `Photographer's notes: ${notes}` : ''}
-Voice — ${voice}
+Voice: ${voice}
 
-The user has written or edited a caption. Improve it while:
-- Keeping their core idea and intention intact
-- Fixing any clichés or weak phrasing
-- Sharpening the language to feel more editorial and considered
-- Maintaining 3-5 sentences
-- Ending with an engaging question or observation
+Improve the caption while:
+- Keeping the core idea and the brand's voice
+- Fixing clichés or weak phrasing
+- Sharpening language to match the brand's tone (see VOICE field in brief)
+- Maintaining 3–5 sentences and ending with an engaging question or observation
 
 Return ONLY the refined caption, nothing else.`
 
