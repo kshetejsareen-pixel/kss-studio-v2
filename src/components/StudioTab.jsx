@@ -66,21 +66,31 @@ ${direction ? `Direction: ${direction}` : 'Let the image lead.'}
 
 Rules: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dominant. Return ONLY HTML div.`
 
-const COPY_SYSTEM = (handle, context, website) => `You are a director of design and copywriter for ${handle}, a world-class commercial photography studio.
+const COPY_SYSTEM = (handle, context, website, brief, tone, imageAnalysis, visionDesc) => `You are a director of design and copywriter for ${handle}, a world-class commercial photography studio.
 Context: ${context || 'Luxury photography'}
 Website: ${website || 'www.kshetejsareen.com'}
+${brief ? `\nJob brief: ${brief}` : ''}
+${tone ? `\nTone direction: ${tone}` : ''}
+${imageAnalysis ? `\nImage analysis — mood: ${imageAnalysis.mood || 'refined'}, tones: ${imageAnalysis.dominantTones || 'varied'}, typography personality: ${imageAnalysis.typographyMood || 'considered'}` : ''}
+${visionDesc ? `\nImage content: ${visionDesc}` : ''}
 
 Write with the authority of a creative director, not a copywriter following a brief.
 Rules:
 - Less is more — luxury brands say one thing, perfectly
-- No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens"
+- No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens", "artistry", "crafted"
 - The headline should make you pause — not explain, but evoke
+- Headlines are 2–5 words maximum. Specificity beats abstraction every time.
 - CTA is always from KSS perspective — an invitation to work together, never a client promotion
 - Website is always KSS: ${website || 'www.kshetejsareen.com'}
 
+Examples of the right voice:
+• Moody portrait, dark studio → Headline: "Before the answer" · Sub: null · CTA: "Commission your story"
+• Furniture/product, clean light → Headline: "Form held still" · Sub: "Made to outlast the moment" · CTA: "Inquire about a commission"
+• Architecture, dramatic window light → Headline: "What rooms remember" · Sub: null · CTA: "Book a location shoot"
+
 Return JSON only:
 {
-  "headline": "2-5 words maximum — the strongest version",
+  "headlines": ["strongest version", "second distinct option", "third distinct option"],
   "sub": "one line that adds context, or null",
   "tagline": "studio's voice — optional, or null",
   "cta": "KSS invitation (e.g. Book a shoot / Commission your story / Inquire now)",
@@ -123,6 +133,10 @@ export default function StudioTab({ showToast }) {
   const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '', website: '' })
   const [lockedFields, setLockedFields]   = useState({ headline: false, sub: false, tagline: false, cta: false })
   const [generatingCopy, setGeneratingCopy] = useState(false)
+  const [copyBrief, setCopyBrief]           = useState('')
+  const [copyTone, setCopyTone]             = useState('')
+  const [headlineVariants, setHeadlineVariants] = useState([])
+  const imgAnalysisCacheRef = useRef({})
   const website = copy.website || state.settings?.website || 'www.kshetejsareen.com'
 
   // Chat panel
@@ -187,21 +201,37 @@ export default function StudioTab({ showToast }) {
     if (!selectedImg) { showToast('Select an image first'); return }
     setGeneratingCopy(true)
     try {
-      const system = COPY_SYSTEM(state.settings.handle || '@kshetej.atwork', state.globalContext, website)
+      // Step 1: vision analysis (cached per image)
+      let imageAnalysis = imgAnalysisCacheRef.current[selectedImg.id] || null
+      if (!imageAnalysis) {
+        try {
+          const av = await claudeVision(key, VISION_ANALYSIS_SYSTEM, 'Analyse this image for copy generation.', selectedImg.dataUrl, M_SONNET, 500)
+          const am = av.match(/\{[\s\S]*\}/)
+          if (am) { imageAnalysis = JSON.parse(am[0]); imgAnalysisCacheRef.current[selectedImg.id] = imageAnalysis }
+        } catch { /* non-fatal */ }
+      }
+
+      // Step 2: generate copy with full context
+      const visionDesc = selectedImg.visionDesc || null
+      const system = COPY_SYSTEM(state.settings.handle || '@kshetej.atwork', state.globalContext, website, copyBrief, copyTone, imageAnalysis, visionDesc)
       const lockedNote = Object.entries(lockedFields).filter(([,v])=>v).map(([k])=>k).join(', ')
-      const prompt = `Generate copy for this image. Brand context: ${state.globalContext || 'luxury photography studio'}.
-${lockedNote ? `These fields are locked — preserve exactly: ${lockedNote}` : ''}
-${lockedFields.headline && copy.headline ? `Keep headline as: "${copy.headline}"` : ''}
-${lockedFields.sub && copy.sub ? `Keep subheadline as: "${copy.sub}"` : ''}
-${lockedFields.tagline && copy.tagline ? `Keep tagline as: "${copy.tagline}"` : ''}
-${lockedFields.cta && copy.cta ? `Keep CTA as: "${copy.cta}"` : ''}
-Look at what's in the image — copy must feel specific to it, not generic.`
-      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_HAIKU, 400)
+      const prompt = [
+        'Generate copy for this image.',
+        lockedNote && `Locked fields (preserve exactly): ${lockedNote}.`,
+        lockedFields.headline && copy.headline && `Keep headline as: "${copy.headline}"`,
+        lockedFields.sub && copy.sub && `Keep subheadline as: "${copy.sub}"`,
+        lockedFields.tagline && copy.tagline && `Keep tagline as: "${copy.tagline}"`,
+        lockedFields.cta && copy.cta && `Keep CTA as: "${copy.cta}"`,
+      ].filter(Boolean).join('\n')
+
+      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_SONNET, 700)
       const match = raw.match(/\{[\s\S]*\}/)
       if (match) {
         const parsed = JSON.parse(match[0])
+        const headlines = Array.isArray(parsed.headlines) ? parsed.headlines.filter(Boolean) : (parsed.headline ? [parsed.headline] : [])
+        setHeadlineVariants(headlines)
         setCopy(prev => ({
-          headline: lockedFields.headline ? prev.headline : (parsed.headline || ''),
+          headline: lockedFields.headline ? prev.headline : (headlines[0] || ''),
           sub:      lockedFields.sub      ? prev.sub      : (parsed.sub || ''),
           tagline:  lockedFields.tagline  ? prev.tagline  : (parsed.tagline || ''),
           cta:      lockedFields.cta      ? prev.cta      : (parsed.cta || ''),
@@ -211,7 +241,7 @@ Look at what's in the image — copy must feel specific to it, not generic.`
       }
     } catch(e) { showToast('Copy failed: ' + e.message) }
     finally { setGeneratingCopy(false) }
-  }, [state, selectedImg, website, lockedFields, copy, showToast])
+  }, [state, selectedImg, website, lockedFields, copy, copyBrief, copyTone, showToast])
 
   // ── Generate design ──
   const generate = useCallback(async () => {
@@ -557,9 +587,45 @@ Think like a director of design — derive everything from the image itself.`
             </div>
             {copyPanel && (
               <>
+                {/* Job brief */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Job Brief</div>
+                  <textarea className="textarea" value={copyBrief} onChange={e => setCopyBrief(e.target.value)}
+                    rows={2} placeholder="What is this image for? (e.g. announcing a portrait series, promoting a commercial shoot)"
+                    style={{ fontSize: 11, resize: 'none', marginBottom: 0 }} />
+                </div>
+
+                {/* Tone presets */}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Tone</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {['Editorial restraint', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
+                      <button key={t} onClick={() => setCopyTone(copyTone === t ? '' : t)}
+                        style={{ padding: '4px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: copyTone === t ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copyTone === t ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copyTone === t ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
-                  {generatingCopy ? <><span className="spin" /> Generating…</> : '✦ Generate Copy from Image'}
+                  {generatingCopy ? <><span className="spin" /> Analysing &amp; generating…</> : '✦ Generate Copy from Image'}
                 </button>
+
+                {/* Headline variant chips */}
+                {headlineVariants.length > 1 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Headline Options</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {headlineVariants.map((h, i) => (
+                        <button key={i} onClick={() => setCopy(c => ({ ...c, headline: h }))}
+                          style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, background: copy.headline === h ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copy.headline === h ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copy.headline === h ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Copy fields with lock */}
                 {[
