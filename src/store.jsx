@@ -20,6 +20,10 @@ function loadSavedContext() {
   try { return localStorage.getItem('kss_global_context') || '' } catch { return '' }
 }
 
+function loadExcludedNames() {
+  try { const s = localStorage.getItem('kss_excluded_names'); return s ? JSON.parse(s) : [] } catch { return [] }
+}
+
 const saved = loadSavedSettings()
 const savedContext = loadSavedContext()
 
@@ -32,6 +36,7 @@ const initialState = {
   designSize: '4:5',
   queue: [],
   globalContext: savedContext,
+  excludedNames: loadExcludedNames(),
   settings: {
     anthropicKey: saved.anthropicKey || '',
     googleKey: saved.googleKey || '',

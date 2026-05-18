@@ -129,7 +129,6 @@ export default function StudioTab({ showToast }) {
   const [canvasSize, setCanvasSize]       = useState({ w: 600, h: 480 })
 
   // Copy panel
-  const [copyPanel, setCopyPanel]         = useState(false)
   const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '', website: '' })
   const [lockedFields, setLockedFields]   = useState({ headline: false, sub: false, tagline: false, cta: false })
   const [generatingCopy, setGeneratingCopy] = useState(false)
@@ -149,7 +148,8 @@ export default function StudioTab({ showToast }) {
   const canvasRef = useRef(null)
   const filmRef   = useRef(null)
 
-  const selectedImg = state.images.find(i => i.id === selectedImgId) || state.images[0] || null
+  const visibleImages = state.images.filter(img => !(state.excludedNames || []).includes(img.name))
+  const selectedImg = visibleImages.find(i => i.id === selectedImgId) || visibleImages[0] || null
 
   // Measure canvas
   useEffect(() => {
@@ -488,7 +488,8 @@ Think like a director of design — derive everything from the image itself.`
         <div style={{ flexShrink: 0, background: '#050505', borderTop: '2px solid #1A1A1A', minHeight: filmSize + 48 }}>
           <div style={{ display: 'flex', alignItems: 'center', padding: '5px 12px', gap: 8, borderBottom: '1px solid #1A1A1A' }}>
             <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
-              {state.images.length} image{state.images.length !== 1 ? 's' : ''}
+              {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
+              {state.excludedNames?.length > 0 && <span style={{ color: 'rgba(180,60,60,.7)', marginLeft: 5 }}>· {state.excludedNames.length} excluded</span>}
             </span>
             {selectedImg && <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {selectedImg.name}</span>}
             <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 'auto' }}>
@@ -498,13 +499,13 @@ Think like a director of design — derive everything from the image itself.`
             </div>
           </div>
           <div ref={filmRef} style={{ display: 'flex', gap: 0, overflowX: 'auto', padding: '6px 12px', height: filmSize + 24, alignItems: 'center', scrollbarWidth: 'thin', scrollbarColor: '#2A2A2A transparent' }}>
-            {state.images.length === 0 ? (
-              <div style={{ fontSize: 10, color: '#333', fontFamily: 'var(--font-mono)', paddingLeft: 8 }}>Upload images to begin</div>
+            {visibleImages.length === 0 ? (
+              <div style={{ fontSize: 10, color: '#333', fontFamily: 'var(--font-mono)', paddingLeft: 8 }}>{state.images.length ? 'All images excluded — clear exclusions in Plan tab' : 'Upload images to begin'}</div>
             ) : (() => {
               const groups = [
-                { label: 'Portrait',  images: state.images.filter(i => (i.orientation || 'portrait') === 'portrait') },
-                { label: 'Landscape', images: state.images.filter(i => i.orientation === 'landscape') },
-                { label: 'Square',    images: state.images.filter(i => i.orientation === 'square') },
+                { label: 'Portrait',  images: visibleImages.filter(i => (i.orientation || 'portrait') === 'portrait') },
+                { label: 'Landscape', images: visibleImages.filter(i => i.orientation === 'landscape') },
+                { label: 'Square',    images: visibleImages.filter(i => i.orientation === 'square') },
               ].filter(g => g.images.length > 0)
               return groups.map((group, gi) => (
                 <div key={group.label} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
@@ -558,175 +559,162 @@ Think like a director of design — derive everything from the image itself.`
 
       {/* ── RIGHT: CONTROLS ── */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-raised)' }}>
+
+        {/* Image preview — always visible at top */}
+        {selectedImg ? (
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
+              <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
+              <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                {selectedImg.width && selectedImg.height ? `${selectedImg.width}×${selectedImg.height}` : ''}
+                {selectedImg.orientation ? ` · ${selectedImg.orientation}` : ''}
+                {selectedImg.visionDesc && <span style={{ color: 'rgba(74,122,191,.8)', marginLeft: 4 }}>· analysed</span>}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Select an image from the filmstrip</div>
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: 'auto' }}>
 
-          {/* Selected image preview */}
-          {selectedImg && (
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ width: 52, height: 52, borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
-                  <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                    {selectedImg.width && selectedImg.height ? `${selectedImg.width}×${selectedImg.height}` : ''} · {selectedImg.orientation || ''}
-                  </div>
-                </div>
-              </div>
+          {/* ── 01 BRIEF ── */}
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--silver)', opacity: .4 }}>01</span> Brief
             </div>
-          )}
-
-          {/* AI Copy panel */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-              <div className="field-label" style={{ flex: 1 }}>Copy & Text</div>
-              <button className="btn btn-ghost btn-xs" onClick={() => setCopyPanel(c => !c)}>
-                {copyPanel ? '▲' : '▼'}
-              </button>
-            </div>
-            {copyPanel && (
-              <>
-                {/* Job brief */}
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Job Brief</div>
-                  <textarea className="textarea" value={copyBrief} onChange={e => setCopyBrief(e.target.value)}
-                    rows={2} placeholder="What is this image for? (e.g. announcing a portrait series, promoting a commercial shoot)"
-                    style={{ fontSize: 11, resize: 'none', marginBottom: 0 }} />
-                </div>
-
-                {/* Tone presets */}
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Tone</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {['Editorial restraint', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
-                      <button key={t} onClick={() => setCopyTone(copyTone === t ? '' : t)}
-                        style={{ padding: '4px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: copyTone === t ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copyTone === t ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copyTone === t ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
-                  {generatingCopy ? <><span className="spin" /> Analysing &amp; generating…</> : '✦ Generate Copy from Image'}
-                </button>
-
-                {/* Headline variant chips */}
-                {headlineVariants.length > 1 && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Headline Options</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {headlineVariants.map((h, i) => (
-                        <button key={i} onClick={() => setCopy(c => ({ ...c, headline: h }))}
-                          style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, background: copy.headline === h ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copy.headline === h ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copy.headline === h ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>
-                          {h}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Copy fields with lock */}
-                {[
-                  ['Headline',    'headline', 'The strongest 2-5 words'],
-                  ['Subheadline', 'sub',      'One line of context'],
-                  ['Tagline',     'tagline',  'Studio voice — optional'],
-                  ['CTA',         'cta',      'Invitation to work together'],
-                ].map(([label, key, ph]) => (
-                  <div key={key} style={{ marginBottom: 6, display: 'flex', gap: 5, alignItems: 'center' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 8, color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        {label}
-                        {lockedFields[key] && <span style={{ fontSize: 7, color: 'var(--silver)', opacity: .7 }}>locked</span>}
-                      </div>
-                      <input className="input" value={copy[key] || ''} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
-                        placeholder={lockedFields[key] ? '(locked)' : ph}
-                        disabled={lockedFields[key]}
-                        style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .6 : 1 }} />
-                    </div>
-                    {/* Lock toggle */}
-                    <button
-                      onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
-                      title={lockedFields[key] ? 'Unlock — will regenerate' : 'Lock — will preserve on next generate'}
-                      style={{ width: 24, height: 24, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {lockedFields[key] ? '🔒' : '🔓'}
-                    </button>
-                  </div>
-                ))}
-
-                {/* Website field */}
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
-                  <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
-                    placeholder="www.kshetejsareen.com"
-                    style={{ fontSize: 11, padding: '5px 8px' }} />
-                  <div style={{ fontSize: 8, color: 'var(--text-3)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>Leave blank to use default KSS website</div>
-                </div>
-
-                {(copy.headline || copy.sub) && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }) }}>Clear all</button>
-                    <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
-                  </div>
-                )}
-              </>
-            )}
-            {!copyPanel && (copy.headline || copy.sub) && (
-              <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                "{copy.headline || copy.sub}"
-                {Object.values(lockedFields).some(Boolean) && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {Object.values(lockedFields).filter(Boolean).length} locked</span>}
-              </div>
-            )}
-          </div>
-
-          {/* Reference image */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div className="field-label" style={{ marginBottom: 4 }}>Reference <span style={{ color: 'var(--text-3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></div>
-            <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 8, fontFamily: 'var(--font-mono)' }}>Upload a design — Claude matches its style</div>
-            {refImgDataUrl ? (
-              <div style={{ position: 'relative', display: 'inline-block' }}>
-                <img src={refImgDataUrl} alt="ref" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 'var(--r)', border: '1px solid var(--silver-edge)', display: 'block' }} />
-                <button onClick={() => setRefImgDataUrl(null)} style={{ position: 'absolute', top: -5, right: -5, width: 16, height: 16, borderRadius: '50%', background: '#1A1A1A', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-              </div>
-            ) : (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                <input type="file" accept="image/*" onChange={handleRefImg} style={{ display: 'none' }} />
-                ↑ Upload reference
-              </label>
-            )}
-          </div>
-
-          {/* Style direction */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-              <div className="field-label" style={{ flex: 1 }}>Directorial Intent</div>
-              {stylePrompt && <button className="btn btn-ghost btn-xs" onClick={() => setStylePrompt('')}>clear</button>}
-            </div>
-            <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
-              rows={2} placeholder="Describe composition and feeling only — colours, fonts and text placement come from the image itself"
+            <textarea className="textarea" value={copyBrief} onChange={e => setCopyBrief(e.target.value)}
+              rows={2} placeholder="What is this image for? (e.g. announcing a portrait series, a fashion editorial campaign)"
               style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {[
-                ['Subject dominant',    'The subject fills the frame. Everything else — type, space, tone — bows to it. Minimal interference.'],
-                ['Negative space led',  'Find the open space in the image. Build the entire composition around it. The subject and text breathe together.'],
-                ['Graphic tension',     'Create visual tension between the image and the type. Contrast of scale, weight or placement. Uncomfortable in the right way.'],
-                ['Editorial stillness', 'Nothing moves, nothing shouts. The design should feel like a magazine spread that stopped time.'],
-                ['Layered depth',       'Multiple visual planes — foreground, subject, background. Typography exists in a separate plane, not on top of the image.'],
-                ['Cinematic',           'Think about what happens before and after the frame. The design should feel like a still from a film — incomplete, evocative.'],
-              ].map(([label, p]) => (
-                <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
-                  style={{ padding: '6px 10px', textAlign: 'left', fontSize: 10, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.4 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 1 }}>{label}</div>
-                  <div style={{ fontSize: 9, opacity: .6, lineHeight: 1.3 }}>{p.slice(0, 60)}…</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {['Editorial restraint', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
+                <button key={t} onClick={() => setCopyTone(copyTone === t ? '' : t)}
+                  style={{ padding: '4px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: copyTone === t ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copyTone === t ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copyTone === t ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+                  {t}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* ── 02 COPY ── */}
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--silver)', opacity: .4 }}>02</span> Copy
+            </div>
+
+            <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
+              {generatingCopy ? <><span className="spin" /> Analysing &amp; generating…</> : '✦ Generate Copy from Image'}
+            </button>
+
+            {/* Headline variant chips */}
+            {headlineVariants.length > 1 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Headline options — pick one</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {headlineVariants.map((h, i) => (
+                    <button key={i} onClick={() => setCopy(c => ({ ...c, headline: h }))}
+                      style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, background: copy.headline === h ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copy.headline === h ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copy.headline === h ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Copy fields */}
+            {[
+              ['Headline',    'headline', 'The strongest 2-5 words'],
+              ['Subheadline', 'sub',      'One line of context'],
+              ['Tagline',     'tagline',  'Studio voice — optional'],
+              ['CTA',         'cta',      'Invitation to work together'],
+            ].map(([label, key, ph]) => (
+              <div key={key} style={{ marginBottom: 6, display: 'flex', gap: 5, alignItems: 'center' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 8, color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>
+                    {label}{lockedFields[key] && <span style={{ fontSize: 7, opacity: .7, marginLeft: 4 }}>locked</span>}
+                  </div>
+                  <input className="input" value={copy[key] || ''} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
+                    placeholder={lockedFields[key] ? '(locked)' : ph}
+                    disabled={lockedFields[key]}
+                    style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .6 : 1 }} />
+                </div>
+                <button onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
+                  title={lockedFields[key] ? 'Unlock' : 'Lock — preserve on next generate'}
+                  style={{ width: 22, height: 22, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {lockedFields[key] ? '●' : '○'}
+                </button>
+              </div>
+            ))}
+
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
+              <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
+                placeholder="www.kshetejsareen.com" style={{ fontSize: 11, padding: '5px 8px' }} />
+            </div>
+
+            {(copy.headline || copy.sub) && (
+              <div style={{ display: 'flex', gap: 5 }}>
+                <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }); setHeadlineVariants([]) }}>Clear</button>
+                <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
+              </div>
+            )}
+          </div>
+
+          {/* ── 03 DESIGN ── */}
+          <div style={{ padding: '12px 14px' }}>
+            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--silver)', opacity: .4 }}>03</span> Design
+              {stylePrompt && <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setStylePrompt('')}>clear</button>}
+            </div>
+
+            {/* Style presets — 2 per row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 10 }}>
+              {[
+                ['Subject dominant',    'Subject fills the frame. Type bows to it.'],
+                ['Negative space led',  'Build around open space. Subject and text breathe.'],
+                ['Graphic tension',     'Visual tension between image and type.'],
+                ['Editorial stillness', 'Magazine spread that stopped time.'],
+                ['Layered depth',       'Type in its own plane, not on top.'],
+                ['Cinematic',           'Feels like a still from a film.'],
+              ].map(([label, p]) => (
+                <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
+                  style={{ padding: '6px 8px', textAlign: 'left', fontSize: 9, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.3 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 8, opacity: .55 }}>{p}</div>
+                </button>
+              ))}
+            </div>
+
+            <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
+              rows={2} placeholder="Or type a custom direction — composition and feeling only"
+              style={{ fontSize: 11, resize: 'none', marginBottom: 10 }} />
+
+            {/* Reference image */}
+            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>Reference Design</div>
+            {refImgDataUrl ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <img src={refImgDataUrl} alt="ref" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 'var(--r)', border: '1px solid var(--silver-edge)', display: 'block' }} />
+                  <button onClick={() => setRefImgDataUrl(null)} style={{ position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%', background: '#1A1A1A', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Claude will match this style</div>
+              </div>
+            ) : (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                <input type="file" accept="image/*" onChange={handleRefImg} style={{ display: 'none' }} />
+                ↑ Upload a design to match
+              </label>
+            )}
+          </div>
         </div>
 
-        {/* Actions — sticky bottom */}
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        {/* Generate — sticky bottom */}
+        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
             {generating ? <><span className="spin" /> {genStep || 'Generating…'}</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
           </button>

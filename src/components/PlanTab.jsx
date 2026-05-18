@@ -53,9 +53,6 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [carouselPreview, setCarouselPreview] = useState(null) // planIdx or null
   const [showChecklist, setShowChecklist] = useState(false)
   const [excludedImgIds, setExcludedImgIds] = useState(new Set())
-  const [excludedImgNames, setExcludedImgNames] = useState(() => {
-    try { const s = localStorage.getItem('kss_excluded_names'); return new Set(s ? JSON.parse(s) : []) } catch { return new Set() }
-  })
   const [hoveredThumb, setHoveredThumb]   = useState(null)
   const [analysisProgress, setAnalysisProgress] = useState(null) // null | { done, total }
   const [directorOpen, setDirectorOpen]   = useState(false)
@@ -89,14 +86,14 @@ export default function PlanTab({ showToast, onTabChange }) {
 
   // Restore exclusions by filename whenever images change (IDs are session-scoped)
   useEffect(() => {
-    if (!state.images.length || !excludedImgNames.size) return
+    if (!state.images.length || !state.excludedNames.length) return
     setExcludedImgIds(prev => {
       const next = new Set(prev)
       let changed = false
-      state.images.forEach(img => { if (excludedImgNames.has(img.name) && !next.has(img.id)) { next.add(img.id); changed = true } })
+      state.images.forEach(img => { if (state.excludedNames.includes(img.name) && !next.has(img.id)) { next.add(img.id); changed = true } })
       return changed ? next : prev
     })
-  }, [state.images]) // eslint-disable-line
+  }, [state.images, state.excludedNames]) // eslint-disable-line
 
   useEffect(() => {
     const el = gridScrollRef.current
@@ -119,14 +116,13 @@ export default function PlanTab({ showToast, onTabChange }) {
     const img = state.images.find(im => im.id === imgId)
     setExcludedImgIds(prev => { const next = new Set(prev); if (next.has(imgId)) next.delete(imgId); else next.add(imgId); return next })
     if (img) {
-      setExcludedImgNames(prev => {
-        const next = new Set(prev)
-        if (next.has(img.name)) next.delete(img.name); else next.add(img.name)
-        localStorage.setItem('kss_excluded_names', JSON.stringify([...next]))
-        return next
-      })
+      const cur = new Set(state.excludedNames)
+      if (cur.has(img.name)) cur.delete(img.name); else cur.add(img.name)
+      const arr = [...cur]
+      localStorage.setItem('kss_excluded_names', JSON.stringify(arr))
+      set('excludedNames', arr)
     }
-  }, [state.images])
+  }, [state.images, state.excludedNames, set])
 
   // Detect white-bg from either structured visionBg tag or free-text description
   const isWhiteBg = useCallback(img => {
@@ -845,7 +841,9 @@ Summary: [one concise sentence describing the image]`
                     style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'rgba(180,60,60,.9)', borderColor: 'rgba(180,60,60,.4)' }}
                     onClick={() => {
                       setExcludedImgIds(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.id)); return next })
-                      setExcludedImgNames(prev => { const next = new Set(prev); whiteBgImgs.forEach(img => next.add(img.name)); localStorage.setItem('kss_excluded_names', JSON.stringify([...next])); return next })
+                      const arr = [...new Set([...state.excludedNames, ...whiteBgImgs.map(img => img.name)])]
+                      localStorage.setItem('kss_excluded_names', JSON.stringify(arr))
+                      set('excludedNames', arr)
                     }}
                     title={`Exclude ${whiteBgImgs.length} white-background images from planning`}>
                     ⊘ white bg ({whiteBgImgs.length})
@@ -857,7 +855,7 @@ Summary: [one concise sentence describing the image]`
           {excludedImgIds.size > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, padding: '3px 6px', background: 'rgba(138,58,58,.12)', border: '1px solid rgba(180,60,60,.3)', borderRadius: 3 }}>
               <span style={{ fontSize: 9, color: 'var(--red, #c06)', fontFamily: 'var(--font-mono)' }}>{excludedImgIds.size} excluded · remembered</span>
-              <button onClick={() => { setExcludedImgIds(new Set()); setExcludedImgNames(new Set()); localStorage.removeItem('kss_excluded_names') }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', padding: 0 }}>clear</button>
+              <button onClick={() => { setExcludedImgIds(new Set()); localStorage.removeItem('kss_excluded_names'); set('excludedNames', []) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--font-mono)', padding: 0 }}>clear</button>
             </div>
           )}
           <div style={{ overflowY: 'auto', flex: 1 }}>
