@@ -66,34 +66,40 @@ ${direction ? `Direction: ${direction}` : 'Let the image lead.'}
 
 Rules: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dominant. Return ONLY HTML div.`
 
-const COPY_SYSTEM = (handle, context, website, brief, tone, imageAnalysis, visionDesc) => `You are a director of design and copywriter for ${handle}, a world-class commercial photography studio.
-Context: ${context || 'Luxury photography'}
+const COPY_SYSTEM = (handle, context, website, tone, imageAnalysis, visionDesc) => `You are writing Instagram copy for ${handle}, a world-class commercial photography studio.
+Studio brief: ${context || 'Kshetej Sareen Studios — luxury commercial, editorial and advertising photography'}
 Website: ${website || 'www.kshetejsareen.com'}
-${brief ? `\nJob brief: ${brief}` : ''}
-${tone ? `\nTone direction: ${tone}` : ''}
-${imageAnalysis ? `\nImage analysis — mood: ${imageAnalysis.mood || 'refined'}, tones: ${imageAnalysis.dominantTones || 'varied'}, typography personality: ${imageAnalysis.typographyMood || 'considered'}` : ''}
-${visionDesc ? `\nImage content: ${visionDesc}` : ''}
+${tone ? `Tone: ${tone}` : ''}
+${imageAnalysis ? `Image mood: ${imageAnalysis.mood || 'refined'} · tones: ${imageAnalysis.dominantTones || 'varied'}` : ''}
+${visionDesc ? `Image content: ${visionDesc}` : ''}
 
-Write with the authority of a creative director, not a copywriter following a brief.
-Rules:
-- Less is more — luxury brands say one thing, perfectly
+PERSPECTIVE — this is non-negotiable:
+You write as the STUDIO, about the STUDIO'S work. Never from the subject's perspective.
+The image is evidence of Kshetej Sareen's photographic vision — not a record of what happened.
+- If the image shows a family → write about presence, attention, the power of a still frame. Not "cherish your memories."
+- If the image shows a product → write about light, form, the studio's gaze on an object. Not the product's features.
+- If the image shows a portrait → write about what the lens found, what the photographer drew out. Not about the person.
+The CTA is always an invitation to COMMISSION work — never a celebration of the subject.
+This is a commercial editorial studio. The audience is potential clients, art directors, brands.
+
+Voice rules:
+- Less is more — say one thing, perfectly
+- Headlines: 2–5 words, evoke don't explain
 - No clichés: "capturing moments", "timeless", "bespoke", "stunning", "through the lens", "artistry", "crafted"
-- The headline should make you pause — not explain, but evoke
-- Headlines are 2–5 words maximum. Specificity beats abstraction every time.
-- CTA is always from KSS perspective — an invitation to work together, never a client promotion
-- Website is always KSS: ${website || 'www.kshetejsareen.com'}
+- Specificity beats abstraction — a detail beats a concept
 
-Examples of the right voice:
-• Moody portrait, dark studio → Headline: "Before the answer" · Sub: null · CTA: "Commission your story"
-• Furniture/product, clean light → Headline: "Form held still" · Sub: "Made to outlast the moment" · CTA: "Inquire about a commission"
-• Architecture, dramatic window light → Headline: "What rooms remember" · Sub: null · CTA: "Book a location shoot"
+Examples:
+• Dark portrait, studio → Headline: "Before the answer" · CTA: "Commission your story"
+• Furniture, clean light → Headline: "Form held still" · Sub: "Made to outlast the moment" · CTA: "Inquire about a commission"
+• Architecture → Headline: "What rooms remember" · CTA: "Book a location shoot"
+• Outdoor portrait, golden hour → Headline: "An hour before the rest of it" · CTA: "Book a shoot"
 
 Return JSON only:
 {
   "headlines": ["strongest version", "second distinct option", "third distinct option"],
-  "sub": "one line that adds context, or null",
-  "tagline": "studio's voice — optional, or null",
-  "cta": "KSS invitation (e.g. Book a shoot / Commission your story / Inquire now)",
+  "sub": "one line or null",
+  "tagline": "optional studio voice line or null",
+  "cta": "invitation to commission (e.g. Book a shoot / Commission your story / Inquire now)",
   "website": "${website || 'www.kshetejsareen.com'}"
 }
 Return ONLY valid JSON.`
@@ -132,7 +138,6 @@ export default function StudioTab({ showToast }) {
   const [copy, setCopy]                   = useState({ headline: '', sub: '', tagline: '', cta: '', website: '' })
   const [lockedFields, setLockedFields]   = useState({ headline: false, sub: false, tagline: false, cta: false })
   const [generatingCopy, setGeneratingCopy] = useState(false)
-  const [copyBrief, setCopyBrief]           = useState('')
   const [copyTone, setCopyTone]             = useState('')
   const [headlineVariants, setHeadlineVariants] = useState([])
   const imgAnalysisCacheRef = useRef({})
@@ -211,9 +216,9 @@ export default function StudioTab({ showToast }) {
         } catch { /* non-fatal */ }
       }
 
-      // Step 2: generate copy with full context
+      // Step 2: generate copy — global brief + tone + image analysis
       const visionDesc = selectedImg.visionDesc || null
-      const system = COPY_SYSTEM(state.settings.handle || '@kshetej.atwork', state.globalContext, website, copyBrief, copyTone, imageAnalysis, visionDesc)
+      const system = COPY_SYSTEM(state.settings.handle || '@kshetej.atwork', state.globalContext, website, copyTone, imageAnalysis, visionDesc)
       const lockedNote = Object.entries(lockedFields).filter(([,v])=>v).map(([k])=>k).join(', ')
       const prompt = [
         'Generate copy for this image.',
@@ -241,7 +246,7 @@ export default function StudioTab({ showToast }) {
       }
     } catch(e) { showToast('Copy failed: ' + e.message) }
     finally { setGeneratingCopy(false) }
-  }, [state, selectedImg, website, lockedFields, copy, copyBrief, copyTone, showToast])
+  }, [state, selectedImg, website, lockedFields, copy, copyTone, showToast])
 
   // ── Generate design ──
   const generate = useCallback(async () => {
@@ -585,11 +590,13 @@ Think like a director of design — derive everything from the image itself.`
 
           {/* ── 01 BRIEF ── */}
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ color: 'var(--silver)', opacity: .4 }}>01</span> Brief
+              <span style={{ color: 'var(--text-3)', opacity: .5, fontSize: 7, marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}>shared · auto-saved</span>
             </div>
-            <textarea className="textarea" value={copyBrief} onChange={e => setCopyBrief(e.target.value)}
-              rows={2} placeholder="What is this image for? (e.g. announcing a portrait series, a fashion editorial campaign)"
+            <textarea className="textarea" value={state.globalContext}
+              onChange={e => { set('globalContext', e.target.value); localStorage.setItem('kss_global_context', e.target.value) }}
+              rows={3} placeholder="Brand or project brief — e.g. RAVOH luxury furniture, Delhi-based, targeting interior designers. Shared across Plan / Studio / Captions."
               style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {['Editorial restraint', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
