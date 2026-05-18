@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, resizeImage, M_SONNET, M_HAIKU } from '../store.jsx'
+import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, resizeImage, extractBase64, PROXY, M_SONNET, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
 
@@ -221,40 +221,65 @@ Summary: [one concise sentence describing the image]`
       : mix === 'stills' ? 'stills only — every post is a single image, no carousels'
       : 'mixed — vary between singles and carousels'
     const analysedRefs = referenceLinks.filter(l => l.analysis)
-    const refsSection = analysedRefs.length
-      ? `REFERENCE GRID ANALYSIS — apply this rhythm and content mix to your plan:\n${analysedRefs.map(l => `• ${l.domain}: ${l.analysis}`).join('\n\n')}`
-      : referenceLinks.length
-        ? `Reference context:\n${referenceLinks.map(l => l.url || l).join('\n')}`
-        : ''
-    // Collect uploaded reference screenshots — passed as actual images to the API
     const refScreenshots = referenceLinks.filter(l => l.thumb).map(l => l.thumb)
-    const refVisualNote = refScreenshots.length
-      ? `REFERENCE GRID IMAGES ATTACHED: ${refScreenshots.length} reference screenshot(s) are embedded above as images. Study them carefully — your image assignments must produce a grid that mirrors their exact: layout rhythm, alternating pattern (e.g. portrait → product → portrait), content type sequencing, and visual balance.`
-      : ''
+    const hasReference = refScreenshots.length > 0 || analysedRefs.length > 0
+
+    // Slot template from screenshot analysis — used as a direct assignment guide
+    const refTemplateSection = analysedRefs.length
+      ? `REFERENCE SLOT TEMPLATE — assign your images to match this structure exactly:\n${analysedRefs.map(l => l.analysis).join('\n\n')}\n\nFor each slot: choose the available image whose content category and orientation best matches the template slot. Follow the PATTERN line precisely.`
+      : referenceLinks.filter(l => l.url).length
+        ? `Reference grids:\n${referenceLinks.filter(l => l.url).map(l => l.url).join('\n')}`
+        : ''
+
     const system = [
       `You are a luxury Instagram content strategist for Kshetej Sareen Studios (${handle}).`,
-      planningNotes.trim() ? `DIRECTOR'S MANDATE — follow these instructions precisely, they override everything else:\n${planningNotes.trim()}` : '',
+      hasReference
+        ? `VISUAL REFERENCE — THIS OVERRIDES YOUR DEFAULT LAYOUT PREFERENCES:\nA reference grid has been provided (screenshot and/or slot template below). You MUST replicate its structure:\n• Follow the exact slot-by-slot content category sequence\n• Match orientation (portrait/square/landscape) per slot position\n• Respect the repeating alternation pattern\nDo NOT invent your own layout. Copy the reference structure and fill it with the available images.`
+        : '',
+      planningNotes.trim() ? `DIRECTOR'S MANDATE — follow these instructions precisely:\n${planningNotes.trim()}` : '',
       `HARD RULES — never break these:
 - You MUST return exactly ${postCount} objects in the JSON array — no fewer, no more.
 - Only use image indices from the provided list. Never invent an index that isn't listed.
 - Every image index must appear AT MOST ONCE across all posts and all carousel slides. No repeats whatsoever.
 - Respond with ONLY a valid JSON array. Zero text before or after. No explanation, no commentary.`,
     ].filter(Boolean).join('\n\n')
+
     const prompt = [
       `Plan an Instagram grid of ${postCount} posts for ${handle}.`,
-      refVisualNote,
-      refsSection,
       `Brand context: ${globalCtx || 'None'}`,
       `Post format: ${ratio} · Content mix: ${mixLabel}`,
       distributionNote,
       orientNote,
       `Available images — ONLY use indices from this list (1-based, each index once only)${analysedCount > 0 ? ` — ${analysedCount} have visual descriptions after the dash` : ''}:\n${imgDesc}`,
+      refTemplateSection,
+      refScreenshots.length
+        ? `The reference grid screenshot(s) are attached above. Use them alongside the slot template to confirm the exact layout rhythm and content types required per slot.`
+        : '',
       `Return ONLY a JSON array of exactly ${postCount} objects:\n[{"imageIndex":1,"slides":[1,3],"type":"single|carousel|reel","theme":"short label","notes":""}]`,
     ].filter(Boolean).join('\n\n')
+
     try {
-      const raw = refScreenshots.length
-        ? await claudeCallWithImages(key, system, prompt, refScreenshots, M_SONNET, 4000)
-        : await claudeCall(key, system, prompt, M_SONNET, 4000)
+      let raw
+      if (refScreenshots.length) {
+        // Build content array with an explicit label before each reference image
+        // so Claude knows what it's looking at before seeing the visual
+        const content = [{ type: 'text', text: `REFERENCE GRID SCREENSHOT${refScreenshots.length > 1 ? 'S' : ''} — study the layout: slot positions, content types, orientation pattern, alternation rhythm:` }]
+        for (const dataUrl of refScreenshots) {
+          const resized = await resizeImage(dataUrl, 1200)
+          const b64 = extractBase64(resized)
+          if (b64) content.push({ type: 'image', source: { type: 'base64', media_type: b64.mediaType, data: b64.data } })
+        }
+        content.push({ type: 'text', text: prompt })
+        const r = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: M_SONNET, max_tokens: 4000, system, messages: [{ role: 'user', content }] }),
+        })
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error?.message || `HTTP ${r.status}`) }
+        raw = (await r.json()).content?.find(b => b.type === 'text')?.text
+      } else {
+        raw = await claudeCall(key, system, prompt, M_SONNET, 4000)
+      }
       const match = raw.match(/\[[\s\S]*?\](?=\s*$|\s*[^,\w])/s) || raw.match(/\[[\s\S]*\]/)
       if (!match) throw new Error('No JSON array in response')
       const parsed = JSON.parse(match[0])
@@ -342,10 +367,19 @@ Summary: [one concise sentence describing the image]`
       return
     }
     try {
-      const system = 'You are a visual content strategist analysing moodboard screenshots for Instagram grid planning. Be concise and specific.'
-      const userText = 'Analyse this screenshot and describe the visual layout: grid pattern, content types (product detail, portrait, lifestyle, etc.), dominant image ratio, and any notable sequencing or colour story. Be actionable for an Instagram content planner.'
-      const analysis = await claudeVision(key, system, userText, thumb)
-      setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analysis: analysis.substring(0, 600), analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
+      const system = 'You are a visual content strategist extracting a precise planning template from an Instagram grid screenshot. Be specific and structured.'
+      const userText = `This is an Instagram grid screenshot. Extract a numbered slot-by-slot template I will use to plan my own grid.
+
+For each visible post (number them left-to-right, top-to-bottom — 1 = top-left):
+- Slot N: [single/carousel] · [content category: portrait / product-detail / lifestyle / architecture / flat-lay / behind-scenes / text] · [orientation: portrait/square/landscape] · [mood: editorial/moody/clean/raw/dramatic]
+
+After the slot list, add exactly two lines:
+PATTERN: [the repeating alternation rule, e.g. "portrait → product-detail → lifestyle, repeating every 3"]
+COLOR STORY: [overall palette mood, e.g. "dark and moody with warm shadows"]
+
+Be numbered, specific, and concise. This will be used as a direct assignment template.`
+      const analysis = await claudeVision(key, system, userText, thumb, M_SONNET, 800)
+      setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analysis: analysis.substring(0, 900), analyzing: false } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
     } catch (err) {
       setReferenceLinks(prev => { const next = prev.map(l => l.thumb === thumb && l.analyzing ? { ...l, analyzing: false, error: err.message } : l); localStorage.setItem('kss_ref_links', JSON.stringify(next)); return next })
     }
