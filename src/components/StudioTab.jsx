@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useStore, claudeVision, claudeCall, M_SONNET, M_HAIKU, exportPng, readFileAsDataUrl, resizeImage, extractBase64, PROXY } from '../store.jsx'
+import { useStore, claudeVision, claudeCall, M_OPUS, M_SONNET, M_HAIKU, exportPng, readFileAsDataUrl, resizeImage, extractBase64, PROXY } from '../store.jsx'
 
 // ── SYSTEM PROMPTS ────────────────────────────────────────
 
@@ -235,7 +235,7 @@ export default function StudioTab({ showToast }) {
         lockedFields.cta && copy.cta && `Keep CTA as: "${copy.cta}"`,
       ].filter(Boolean).join('\n')
 
-      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_SONNET, 700)
+      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 700)
       const match = raw.match(/\{[\s\S]*\}/)
       if (match) {
         const parsed = JSON.parse(match[0])
@@ -295,7 +295,7 @@ Think like a director of design — derive everything from the image itself.`
         const r = await fetch(PROXY, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: M_SONNET, max_tokens: 4000, system, messages: [{ role: 'user', content: [
+          body: JSON.stringify({ model: M_OPUS, max_tokens: 4000, system, messages: [{ role: 'user', content: [
             { type: 'text', text: 'Subject image:' },
             { type: 'image', source: { type: 'base64', media_type: bs.mediaType, data: bs.data } },
             { type: 'text', text: 'Reference image (match this style):' },
@@ -306,7 +306,7 @@ Think like a director of design — derive everything from the image itself.`
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         raw = (await r.json()).content?.find(b => b.type === 'text')?.text
       } else {
-        raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_SONNET, 4000)
+        raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 4000)
       }
 
       if (!raw) throw new Error('Empty response')
