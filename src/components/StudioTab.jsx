@@ -149,6 +149,10 @@ export default function StudioTab({ showToast }) {
   const imgAnalysisCacheRef = useRef({})
   const website = copy.website || state.settings?.website || 'www.kshetejsareen.com'
 
+  // Section collapse state
+  const [openSections, setOpenSections] = useState({ copy: true, design: true, versions: false })
+  const toggleSection = (key) => setOpenSections(s => ({ ...s, [key]: !s[key] }))
+
   // Chat panel
   const [chatOpen, setChatOpen]           = useState(false)
   const [chatInput, setChatInput]         = useState('')
@@ -156,8 +160,15 @@ export default function StudioTab({ showToast }) {
   const [chatting, setChatting]           = useState(false)
   const chatEndRef = useRef(null)
 
-  const canvasRef = useRef(null)
-  const filmRef   = useRef(null)
+  const canvasRef     = useRef(null)
+  const filmRef       = useRef(null)
+  // Stable refs for wheel handler (avoid stale closures without re-attaching the listener)
+  const canvasSizeRef = useRef({ w: 600, h: 480 })
+  const zoomRef       = useRef(zoom)
+  const modeRef       = useRef(mode)
+  useEffect(() => { canvasSizeRef.current = canvasSize }, [canvasSize])
+  useEffect(() => { zoomRef.current = zoom }, [zoom])
+  useEffect(() => { modeRef.current = mode }, [mode])
 
   const visibleImages = state.images.filter(img => !(state.excludedNames || []).includes(img.name))
   const selectedImg = visibleImages.find(i => i.id === selectedImgId) || visibleImages[0] || null
@@ -175,19 +186,51 @@ export default function StudioTab({ showToast }) {
     return () => ro.disconnect()
   }, [])
 
-  // Zoom via wheel
+  // Pinch-to-zoom + scroll: mounted once, reads live values via refs
   useEffect(() => {
     const el = canvasRef.current; if (!el) return
     const h = (e) => {
+      // Two-finger swipe (no ctrlKey) → let the browser scroll the container natively
+      if (!e.ctrlKey) return
+      // Pinch-to-zoom (macOS trackpad sends ctrlKey=true for pinch)
       e.preventDefault()
-      setZoom(z => {
-        const cur = z === 0 ? fitScale : z
-        return Math.max(0.1, Math.min(3, +(cur + (e.deltaY < 0 ? 0.05 : -0.05)).toFixed(2)))
+
+      const rect   = el.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      const dims = modeRef.current === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 }
+      const cs   = canvasSizeRef.current
+      const fit  = cs.w > 0 && cs.h > 0
+        ? Math.min((cs.w - 48) / dims.w, (cs.h - 48) / dims.h) : 0.3
+      const oldScale = zoomRef.current === 0 ? fit : zoomRef.current
+
+      // Smooth exponential zoom speed (matches native trackpad feel)
+      const newScale = Math.max(0.1, Math.min(3, oldScale * Math.pow(1.001, -e.deltaY)))
+
+      // Keep the pixel under the cursor fixed in place after zoom
+      const scaledW  = dims.w * oldScale
+      const scaledH  = dims.h * oldScale
+      // When content is smaller than container it's centered (margin:auto), so offset > 0
+      const offsetX  = Math.max(0, (el.clientWidth  - scaledW) / 2)
+      const offsetY  = Math.max(0, (el.clientHeight - scaledH) / 2)
+      const contentX = (mouseX + el.scrollLeft - offsetX) / oldScale
+      const contentY = (mouseY + el.scrollTop  - offsetY) / oldScale
+
+      const newScaledW  = dims.w * newScale
+      const newScaledH  = dims.h * newScale
+      const newOffsetX  = Math.max(0, (el.clientWidth  - newScaledW) / 2)
+      const newOffsetY  = Math.max(0, (el.clientHeight - newScaledH) / 2)
+
+      setZoom(newScale)
+      requestAnimationFrame(() => {
+        el.scrollLeft = Math.max(0, contentX * newScale + newOffsetX - mouseX)
+        el.scrollTop  = Math.max(0, contentY * newScale + newOffsetY - mouseY)
       })
     }
     el.addEventListener('wheel', h, { passive: false })
     return () => el.removeEventListener('wheel', h)
-  }, [designHtml, storyHtml])
+  }, []) // eslint-disable-line — intentionally mount-once; live values via refs above
 
   // Scroll filmstrip to selected
   useEffect(() => {
@@ -198,6 +241,25 @@ export default function StudioTab({ showToast }) {
 
   // Auto scroll chat
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatHistory])
+
+  // Keyboard shortcuts (Space=fit, ←→=navigate, G=generate)
+  useEffect(() => {
+    const h = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.code === 'Space') { e.preventDefault(); setZoom(0) }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault()
+        setSelectedImgId(cur => {
+          const imgs = state.images.filter(img => !(state.excludedNames || []).includes(img.name))
+          const idx = imgs.findIndex(i => i.id === cur)
+          const next = e.key === 'ArrowLeft' ? Math.max(0, idx - 1) : Math.min(imgs.length - 1, idx + 1)
+          return imgs[next]?.id ?? cur
+        })
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [state.images, state.excludedNames])
 
   const handleRefImg = async (e) => {
     const file = e.target.files?.[0]; if (!file) return
@@ -276,12 +338,38 @@ export default function StudioTab({ showToast }) {
         if (match) analysis = JSON.parse(match[0])
       } catch { /* non-fatal */ }
 
+      // Step 1.5 — Auto-generate copy from brief if no headline
+      let activeCopy = copy
+      if (!copy.headline && context) {
+        setGenStep('Generating copy from brief…')
+        try {
+          const visionDesc = selectedImg.visionDesc || null
+          const copySystem = COPY_SYSTEM(handle, context, website, null, analysis, visionDesc)
+          const rawCopy = await claudeVision(key, copySystem, 'Generate copy for this image.', selectedImg.dataUrl, M_OPUS, 700)
+          const cm = rawCopy.match(/\{[\s\S]*\}/)
+          if (cm) {
+            const parsed = JSON.parse(cm[0])
+            const headlines = Array.isArray(parsed.headlines) ? parsed.headlines.filter(Boolean) : (parsed.headline ? [parsed.headline] : [])
+            setHeadlineVariants(headlines)
+            const freshCopy = {
+              headline: headlines[0] || '',
+              sub: parsed.sub || '',
+              tagline: parsed.tagline || '',
+              cta: parsed.cta || '',
+              website: copy.website || parsed.website || website,
+            }
+            setCopy(freshCopy)
+            activeCopy = freshCopy
+          }
+        } catch { /* non-fatal — proceed without copy */ }
+      }
+
       // Step 2 — Generate design
       setGenStep('Generating design…')
-      const hasCopy = copy.headline || copy.sub || copy.tagline
+      const hasCopy = activeCopy.headline || activeCopy.sub || activeCopy.tagline
       const system = isStory
-        ? STORY_SYSTEM(handle, context, analysis, hasCopy ? copy : null, website, stylePrompt)
-        : POST_SYSTEM(handle, context, analysis, hasCopy ? copy : null, website, stylePrompt)
+        ? STORY_SYSTEM(handle, context, analysis, hasCopy ? activeCopy : null, website, stylePrompt)
+        : POST_SYSTEM(handle, context, analysis, hasCopy ? activeCopy : null, website, stylePrompt)
 
       const prompt = `Generate a ${isStory ? '1080×1920 Instagram Story' : '1080×1350 Instagram Post'} design.
 Handle: ${handle} · Website: ${website}
@@ -371,105 +459,162 @@ Think like a director of design — derive everything from the image itself.`
   // zoom is an absolute scale value, not a multiplier
   // default zoom=0 means "fit to container"
   const displayScale = zoom === 0 ? fitScale : zoom
-  const getFrameW    = (img) => Math.round(filmSize * (img.width && img.height ? img.width / img.height : 0.75))
+  const hasCopyFilled = !!(copy.headline || copy.sub)
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 288px', gap: 0, height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 296px', height: '100%', overflow: 'hidden' }}>
 
-      {/* ── LEFT: CANVAS + FILMSTRIP ── */}
+      {/* ── LEFT: VERTICAL FILMSTRIP ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
+            {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
+          </span>
+          {state.excludedNames?.length > 0 && (
+            <span style={{ fontSize: 8, color: 'rgba(180,60,60,.6)', fontFamily: 'var(--font-mono)' }}>· {state.excludedNames.length} off</span>
+          )}
+        </div>
+        <div ref={filmRef} style={{ flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 0, scrollbarWidth: 'thin', scrollbarColor: '#1E1E1E transparent' }}>
+          {visibleImages.length === 0 ? (
+            <div style={{ fontSize: 9, color: '#2A2A2A', fontFamily: 'var(--font-mono)', padding: '12px 4px', lineHeight: 1.6 }}>
+              {state.images.length ? 'All excluded in Plan' : 'Upload images to begin'}
+            </div>
+          ) : (() => {
+            const groups = [
+              { label: 'Portrait',  images: visibleImages.filter(i => (i.orientation || 'portrait') === 'portrait') },
+              { label: 'Landscape', images: visibleImages.filter(i => i.orientation === 'landscape') },
+              { label: 'Square',    images: visibleImages.filter(i => i.orientation === 'square') },
+            ].filter(g => g.images.length > 0)
+            return groups.map((group, gi) => (
+              <div key={group.label} style={{ marginBottom: gi < groups.length - 1 ? 12 : 0 }}>
+                <div style={{ fontSize: 7, color: '#2A2A2A', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', padding: '4px 2px 6px', userSelect: 'none' }}>
+                  {group.label} {group.images.length}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {group.images.map(img => {
+                    const isSelected = selectedImg?.id === img.id
+                    const aspect = img.width && img.height ? img.height / img.width : 1.25
+                    return (
+                      <div key={img.id} data-id={img.id}
+                        onClick={() => setSelectedImgId(img.id)}
+                        style={{ width: '100%', aspectRatio: `1 / ${aspect.toFixed(3)}`, position: 'relative', borderRadius: 3, overflow: 'hidden', cursor: 'pointer', outline: isSelected ? '2px solid var(--silver)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .1s', flexShrink: 0 }}>
+                        <img src={img.dataUrl} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+                        {isSelected && <div style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 2px rgba(200,200,204,.3)' }} />}
+                        <button
+                          onClick={e => deleteImage(img.id, e)}
+                          style={{ position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,.7)', border: '1px solid rgba(255,255,255,.15)', color: '#aaa', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .12s', backdropFilter: 'blur(4px)' }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                          onMouseLeave={e => e.currentTarget.style.opacity = 0}>✕</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          })()}
+        </div>
+      </div>
+
+      {/* ── CENTER: CANVAS ── */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)' }}>
 
-        {/* Toolbar */}
-        <div style={{ display: 'flex', gap: 4, padding: '10px 16px', alignItems: 'center', flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
+        {/* Toolbar — zoom always visible */}
+        <div style={{ display: 'flex', gap: 4, padding: '8px 14px', alignItems: 'center', flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
           {['post', 'story'].map(m => (
             <button key={m} onClick={() => { setMode(m); setZoom(0) }}
-              style={{ padding: '5px 14px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
-              {m === 'post' ? 'Post 4:5' : 'Story 9:16'}
+              style={{ padding: '4px 12px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+              {m === 'post' ? '4:5' : '9:16'}
             </button>
           ))}
-          {currentHtml && (
-            <>
-              <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 8 }}>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +((z === 0 ? fitScale : z) - 0.05).toFixed(2)))}>−</button>
-                <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 36, textAlign: 'center' }}>{Math.round(displayScale * 100)}%</span>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(3, +((z === 0 ? fitScale : z) + 0.05).toFixed(2)))}>+</button>
-                <button className="btn btn-ghost btn-xs" onClick={() => setZoom(0)} title="Fit to screen">fit</button>
-              </div>
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
+          <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +((z === 0 ? fitScale : z) * 0.9).toFixed(3)))}>−</button>
+            <button onClick={() => setZoom(0)} style={{ minWidth: 44, padding: '3px 6px', fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r)', cursor: 'pointer', textAlign: 'center' }} title="Click to fit (Space)">
+              {Math.round(displayScale * 100)}%
+            </button>
+            <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(3, +((z === 0 ? fitScale : z) * 1.1).toFixed(3)))}>+</button>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {currentHtml && (
+              <>
                 <button className="btn btn-ghost btn-xs"
-                  style={{ color: 'var(--amber)', borderColor: chatOpen ? 'var(--amber)' : 'var(--border)' }}
-                  onClick={() => setChatOpen(c => !c)}
-                  title="Open design chatbot to refine this design">
-                  💬 Refine
+                  style={{ color: chatOpen ? 'var(--amber)' : 'var(--text-3)', borderColor: chatOpen ? 'rgba(255,170,0,.35)' : 'var(--border)' }}
+                  onClick={() => setChatOpen(c => !c)}>
+                  Refine
                 </button>
-                <button className="btn btn-ghost btn-xs" onClick={() => navigator.clipboard.writeText(currentHtml).then(() => showToast('HTML copied ✓'))} title="Copy HTML source">
-                  ⎘ HTML
+                <button className="btn btn-ghost btn-xs" onClick={() => navigator.clipboard.writeText(currentHtml).then(() => showToast('Copied ✓'))}>
+                  HTML
                 </button>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Canvas */}
         <div ref={canvasRef}
-          style={{ flex: 1, background: '#0D0D0D', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
-          {!currentHtml ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, color: 'var(--text-3)', width: '100%' }}>
-              {selectedImg ? (
-                <>
-                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 320, maxWidth: '70%', objectFit: 'contain', opacity: .2, borderRadius: 4 }} />
-                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Set direction → Generate</div>
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 40, opacity: .06 }}>◫</div>
-                  <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Select image from filmstrip</div>
-                </>
-              )}
-            </div>
-          ) : (
-            /* Scale wrapper — reserves only the visual (post-scale) dimensions */
-            /* This prevents layout shift because flex sees the scaled size not the raw 1080px */
+          style={{ flex: 1, background: '#0C0C0C', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative' }}>
+          {selectedImg || currentHtml ? (
             <div style={{
               width: Math.round(canvasDims.w * displayScale),
               height: Math.round(canvasDims.h * displayScale),
               flexShrink: 0,
               position: 'relative',
               margin: 'auto',
+              boxShadow: currentHtml ? '0 0 0 1px rgba(255,255,255,0.06), 0 12px 60px rgba(0,0,0,.8)' : 'none',
             }}>
-              <div style={{
-                position: 'absolute', top: 0, left: 0,
-                transformOrigin: 'top left',
-                transform: `scale(${displayScale})`,
-                width: canvasDims.w,
-                height: canvasDims.h,
-                pointerEvents: 'none',
-              }}
-                dangerouslySetInnerHTML={{ __html: currentHtml }}
-              />
+              {currentHtml ? (
+                <div style={{
+                  position: 'absolute', top: 0, left: 0,
+                  transformOrigin: 'top left',
+                  transform: `scale(${displayScale})`,
+                  width: canvasDims.w,
+                  height: canvasDims.h,
+                  pointerEvents: 'none',
+                }}
+                  dangerouslySetInnerHTML={{ __html: currentHtml }}
+                />
+              ) : (
+                <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 2 }}>
+                  <img
+                    src={selectedImg.dataUrl}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', padding: '20px 16px' }}>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', fontFamily: 'var(--font-mono)', letterSpacing: '.08em' }}>
+                      Ready · press G or click Generate →
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--text-3)' }}>
+              <div style={{ fontSize: 32, opacity: .05 }}>◫</div>
+              <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>Select an image from the left panel</div>
             </div>
           )}
           {generating && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(4px)' }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(8px)' }}>
               <div style={{ textAlign: 'center' }}>
-                <span className="spin" style={{ width: 20, height: 20, borderWidth: 2, display: 'block', margin: '0 auto 12px' }} />
-                <div style={{ fontSize: 11, color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>{genStep}</div>
+                <span className="spin" style={{ width: 18, height: 18, borderWidth: 2, display: 'block', margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,.5)', fontFamily: 'var(--font-mono)', letterSpacing: '.08em' }}>{genStep}</div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Chat panel */}
+        {/* Refine chat drawer */}
         {chatOpen && currentHtml && (
           <div style={{ flexShrink: 0, background: '#080808', borderTop: '1px solid var(--border)', height: 200, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontSize: 9, color: 'var(--amber)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', flex: 1 }}>Design Chatbot — describe a change</span>
-              <button onClick={() => { setChatOpen(false); setChatHistory([]) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 11 }}>✕</button>
+            <div style={{ padding: '6px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ fontSize: 9, color: 'var(--amber)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', flex: 1 }}>Refine — describe a change</span>
+              <button onClick={() => { setChatOpen(false); setChatHistory([]) }} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px', display: 'flex', flexDirection: 'column', gap: 5 }}>
               {chatHistory.length === 0 && (
-                <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                  Try: "make the text larger" · "move copy to bottom" · "darken the overlay" · "use serif font" · "add a thin white border"
+                <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', lineHeight: 1.8 }}>
+                  "larger headline" · "shift type to bottom" · "darken overlay" · "use italic serif" · "thin white rule"
                 </div>
               )}
               {chatHistory.map((m, i) => (
@@ -479,12 +624,12 @@ Think like a director of design — derive everything from the image itself.`
               ))}
               <div ref={chatEndRef} />
             </div>
-            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', display: 'flex', gap: 6 }}>
+            <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 6 }}>
               <input
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendChat()}
-                placeholder="Describe a change… (Enter to send)"
+                placeholder="Describe a change… (Enter)"
                 disabled={chatting}
                 style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 11, padding: '6px 10px', fontFamily: 'var(--font-body)', outline: 'none' }}
               />
@@ -494,240 +639,212 @@ Think like a director of design — derive everything from the image itself.`
             </div>
           </div>
         )}
-
-        {/* Filmstrip */}
-        <div style={{ flexShrink: 0, background: '#050505', borderTop: '2px solid #1A1A1A', minHeight: filmSize + 48 }}>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '5px 12px', gap: 8, borderBottom: '1px solid #1A1A1A' }}>
-            <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
-              {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
-              {state.excludedNames?.length > 0 && <span style={{ color: 'rgba(180,60,60,.7)', marginLeft: 5 }}>· {state.excludedNames.length} excluded</span>}
-            </span>
-            {selectedImg && <span style={{ fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {selectedImg.name}</span>}
-            <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 'auto' }}>
-              <button onClick={() => setFilmSize(s => Math.max(48, s - 16))} style={{ width: 20, height: 20, background: 'none', border: '1px solid #2A2A2A', borderRadius: 2, color: '#666', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-              <span style={{ fontSize: 8, color: '#555', fontFamily: 'var(--font-mono)', minWidth: 24, textAlign: 'center' }}>{filmSize}</span>
-              <button onClick={() => setFilmSize(s => Math.min(160, s + 16))} style={{ width: 20, height: 20, background: 'none', border: '1px solid #2A2A2A', borderRadius: 2, color: '#666', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-            </div>
-          </div>
-          <div ref={filmRef} style={{ display: 'flex', gap: 0, overflowX: 'auto', padding: '6px 12px', height: filmSize + 24, alignItems: 'center', scrollbarWidth: 'thin', scrollbarColor: '#2A2A2A transparent' }}>
-            {visibleImages.length === 0 ? (
-              <div style={{ fontSize: 10, color: '#333', fontFamily: 'var(--font-mono)', paddingLeft: 8 }}>{state.images.length ? 'All images excluded — clear exclusions in Plan tab' : 'Upload images to begin'}</div>
-            ) : (() => {
-              const groups = [
-                { label: 'Portrait',  images: visibleImages.filter(i => (i.orientation || 'portrait') === 'portrait') },
-                { label: 'Landscape', images: visibleImages.filter(i => i.orientation === 'landscape') },
-                { label: 'Square',    images: visibleImages.filter(i => i.orientation === 'square') },
-              ].filter(g => g.images.length > 0)
-              return groups.map((group, gi) => (
-                <div key={group.label} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                  <div style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)', fontSize: 7, color: '#333', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', paddingRight: 4, paddingLeft: gi > 0 ? 12 : 0, flexShrink: 0, userSelect: 'none' }}>
-                    {group.label} {group.images.length}
-                  </div>
-                  <div style={{ width: 1, height: filmSize * 0.7, background: '#1E1E1E', flexShrink: 0, marginRight: 6 }} />
-                  {group.images.map(img => {
-                    const isSelected = selectedImg?.id === img.id
-                    return (
-                      <div key={img.id} data-id={img.id}
-                        onClick={() => setSelectedImgId(img.id)}
-                        style={{ width: getFrameW(img), height: filmSize, flexShrink: 0, marginRight: 3, borderRadius: 2, overflow: 'hidden', cursor: 'pointer', border: `2px solid ${isSelected ? 'var(--silver)' : 'transparent'}`, position: 'relative', transition: 'border-color .12s', boxShadow: isSelected ? '0 0 10px rgba(200,200,204,.15)' : 'none' }}>
-                        <img src={img.dataUrl} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
-                        {isSelected && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--silver)' }} />}
-                        {/* Delete button on hover */}
-                        <button
-                          onClick={e => deleteImage(img.id, e)}
-                          style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%', background: 'rgba(180,60,60,.9)', border: 'none', color: '#fff', fontSize: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .15s' }}
-                          onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                          onMouseLeave={e => e.currentTarget.style.opacity = 0}>✕</button>
-                      </div>
-                    )
-                  })}
-                </div>
-              ))
-            })()}
-          </div>
-        </div>
-
-        {/* Iterations */}
-        {iterations.length > 1 && mode === 'post' && (
-          <div style={{ flexShrink: 0, background: '#080808', borderTop: '1px solid var(--border)', padding: '8px 12px' }}>
-            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 6, letterSpacing: '.1em', textTransform: 'uppercase' }}>Iterations ({iterations.length})</div>
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-              {iterations.map((iter, i) => (
-                <div key={i} style={{ flexShrink: 0, position: 'relative' }}>
-                  <div style={{ width: 40, aspectRatio: '4/5', borderRadius: 2, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${iter.starred ? 'var(--amber)' : 'var(--border)'}` }}
-                    onClick={() => { setDesignHtml(iter.html); setZoom(1) }} title={iter.prompt}>
-                    <div style={{ transform: `scale(${40/1080})`, transformOrigin: 'top left', width: 1080, height: 1350, pointerEvents: 'none' }}
-                      dangerouslySetInnerHTML={{ __html: iter.html }} />
-                  </div>
-                  <button onClick={() => setIterations(prev => prev.map((it, j) => j === i ? { ...it, starred: !it.starred } : it))}
-                    style={{ position: 'absolute', top: 2, left: 2, background: 'none', border: 'none', fontSize: 8, cursor: 'pointer', opacity: iter.starred ? 1 : .4 }}>★</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── RIGHT: CONTROLS ── */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-raised)' }}>
 
-        {/* Image preview — always visible at top */}
-        {selectedImg ? (
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 10, alignItems: 'center' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
-              <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
-              <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                {selectedImg.width && selectedImg.height ? `${selectedImg.width}×${selectedImg.height}` : ''}
-                {selectedImg.orientation ? ` · ${selectedImg.orientation}` : ''}
-                {selectedImg.visionDesc && <span style={{ color: 'rgba(74,122,191,.8)', marginLeft: 4 }}>· analysed</span>}
+        {/* Selected image + brief — always visible header */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {selectedImg ? (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 3, overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
+                <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Select an image from the filmstrip</div>
-          </div>
-        )}
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-
-          {/* ── 01 BRIEF ── */}
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: 'var(--silver)', opacity: .4 }}>01</span> Brief
-              <span style={{ color: 'var(--text-3)', opacity: .5, fontSize: 7, marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}>shared · auto-saved</span>
-            </div>
-            <textarea className="textarea" value={state.globalContext}
-              onChange={e => { set('globalContext', e.target.value); localStorage.setItem('kss_global_context', e.target.value) }}
-              rows={3} placeholder="Brand or project brief — e.g. RAVOH luxury furniture, Delhi-based, targeting interior designers. Shared across Plan / Studio / Captions."
-              style={{ fontSize: 11, resize: 'none', marginBottom: 8 }} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {['Editorial restraint', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
-                <button key={t} onClick={() => setCopyTone(copyTone === t ? '' : t)}
-                  style={{ padding: '4px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: copyTone === t ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copyTone === t ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copyTone === t ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── 02 COPY ── */}
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: 'var(--silver)', opacity: .4 }}>02</span> Copy
-            </div>
-
-            <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
-              {generatingCopy ? <><span className="spin" /> Analysing &amp; generating…</> : '✦ Generate Copy from Image'}
-            </button>
-
-            {/* Headline variant chips */}
-            {headlineVariants.length > 1 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Headline options — pick one</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {headlineVariants.map((h, i) => (
-                    <button key={i} onClick={() => setCopy(c => ({ ...c, headline: h }))}
-                      style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, background: copy.headline === h ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copy.headline === h ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copy.headline === h ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>
-                      {h}
-                    </button>
-                  ))}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
+                <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                  {selectedImg.width && selectedImg.height ? `${selectedImg.width}×${selectedImg.height}` : ''}
+                  {selectedImg.orientation ? ` · ${selectedImg.orientation}` : ''}
                 </div>
               </div>
-            )}
-
-            {/* Copy fields */}
-            {[
-              ['Headline',    'headline', 'The strongest 2-5 words'],
-              ['Subheadline', 'sub',      'One line of context'],
-              ['Tagline',     'tagline',  'Studio voice — optional'],
-              ['CTA',         'cta',      'Invitation to work together'],
-            ].map(([label, key, ph]) => (
-              <div key={key} style={{ marginBottom: 6, display: 'flex', gap: 5, alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 8, color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>
-                    {label}{lockedFields[key] && <span style={{ fontSize: 7, opacity: .7, marginLeft: 4 }}>locked</span>}
-                  </div>
-                  <input className="input" value={copy[key] || ''} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
-                    placeholder={lockedFields[key] ? '(locked)' : ph}
-                    disabled={lockedFields[key]}
-                    style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .6 : 1 }} />
-                </div>
-                <button onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
-                  title={lockedFields[key] ? 'Unlock' : 'Lock — preserve on next generate'}
-                  style={{ width: 22, height: 22, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {lockedFields[key] ? '●' : '○'}
-                </button>
-              </div>
-            ))}
-
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
-              <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
-                placeholder="www.kshetejsareen.com" style={{ fontSize: 11, padding: '5px 8px' }} />
             </div>
-
-            {(copy.headline || copy.sub) && (
-              <div style={{ display: 'flex', gap: 5 }}>
-                <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }); setHeadlineVariants([]) }}>Clear</button>
-                <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
-              </div>
-            )}
-          </div>
-
-          {/* ── 03 DESIGN ── */}
-          <div style={{ padding: '12px 14px' }}>
-            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ color: 'var(--silver)', opacity: .4 }}>03</span> Design
-              {stylePrompt && <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setStylePrompt('')}>clear</button>}
+          ) : (
+            <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>No image selected</div>
+          )}
+          {/* Brief — read-only reference, edit at top bar */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: '6px 9px' }}>
+            <div style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Brief</div>
+            <div style={{ fontSize: 9, color: state.globalContext ? 'var(--text-2)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+              {state.globalContext || '— add in the bar above —'}
             </div>
-
-            {/* Style presets — 2 per row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 10 }}>
-              {[
-                ['Subject dominant',    'Subject fills the frame. Type bows to it.'],
-                ['Negative space led',  'Build around open space. Subject and text breathe.'],
-                ['Graphic tension',     'Visual tension between image and type.'],
-                ['Editorial stillness', 'Magazine spread that stopped time.'],
-                ['Layered depth',       'Type in its own plane, not on top.'],
-                ['Cinematic',           'Feels like a still from a film.'],
-              ].map(([label, p]) => (
-                <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
-                  style={{ padding: '6px 8px', textAlign: 'left', fontSize: 9, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.3 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 8, opacity: .55 }}>{p}</div>
-                </button>
-              ))}
-            </div>
-
-            <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
-              rows={2} placeholder="Or type a custom direction — composition and feeling only"
-              style={{ fontSize: 11, resize: 'none', marginBottom: 10 }} />
-
-            {/* Reference image */}
-            <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>Reference Design</div>
-            {refImgDataUrl ? (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <img src={refImgDataUrl} alt="ref" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 'var(--r)', border: '1px solid var(--silver-edge)', display: 'block' }} />
-                  <button onClick={() => setRefImgDataUrl(null)} style={{ position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%', background: '#1A1A1A', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>Claude will match this style</div>
-              </div>
-            ) : (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-                <input type="file" accept="image/*" onChange={handleRefImg} style={{ display: 'none' }} />
-                ↑ Upload a design to match
-              </label>
-            )}
           </div>
         </div>
 
-        {/* Generate — sticky bottom */}
-        <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+        {/* Scrollable sections */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+
+          {/* ── COPY SECTION ── */}
+          <div style={{ borderBottom: '1px solid var(--border)' }}>
+            <button
+              onClick={() => toggleSection('copy')}
+              style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Copy
+                {hasCopyFilled && <span style={{ color: 'rgba(80,180,80,.7)', fontSize: 7 }}>✓</span>}
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--text-3)', lineHeight: 1 }}>{openSections.copy ? '▲' : '▼'}</span>
+            </button>
+            {openSections.copy && (
+              <div style={{ padding: '0 14px 12px' }}>
+                {/* Tone presets */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 10 }}>
+                  {['Editorial', 'Interrogative', 'Declarative', 'Poetic', 'Provocative'].map(t => (
+                    <button key={t} onClick={() => setCopyTone(copyTone === t ? '' : t)}
+                      style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: copyTone === t ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copyTone === t ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copyTone === t ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+
+                <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
+                  {generatingCopy ? <><span className="spin" /> Generating…</> : '✦ Generate Copy'}
+                </button>
+
+                {headlineVariants.length > 1 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Options — pick one</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {headlineVariants.map((h, i) => (
+                        <button key={i} onClick={() => setCopy(c => ({ ...c, headline: h }))}
+                          style={{ padding: '6px 9px', textAlign: 'left', fontSize: 10, background: copy.headline === h ? 'var(--silver-ghost)' : 'none', border: `1px solid ${copy.headline === h ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: copy.headline === h ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {[
+                  ['Headline',    'headline', '2–5 decisive words'],
+                  ['Sub',         'sub',      'One line of context'],
+                  ['Tagline',     'tagline',  'Studio voice — optional'],
+                  ['CTA',         'cta',      'Invitation, not a command'],
+                ].map(([label, key, ph]) => (
+                  <div key={key} style={{ marginBottom: 6, display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 7, color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>
+                        {label}{lockedFields[key] && <span style={{ opacity: .6, marginLeft: 3 }}>·lock</span>}
+                      </div>
+                      <input className="input" value={copy[key] || ''} onChange={e => setCopy(c => ({ ...c, [key]: e.target.value }))}
+                        placeholder={ph} disabled={lockedFields[key]}
+                        style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .5 : 1 }} />
+                    </div>
+                    <button onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
+                      title={lockedFields[key] ? 'Unlock' : 'Lock'}
+                      style={{ width: 20, height: 20, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {lockedFields[key] ? '●' : '○'}
+                    </button>
+                  </div>
+                ))}
+
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 3 }}>Website</div>
+                  <input className="input" value={copy.website || ''} onChange={e => setCopy(c => ({ ...c, website: e.target.value }))}
+                    placeholder="www.kshetejsareen.com" style={{ fontSize: 11, padding: '5px 8px' }} />
+                </div>
+
+                {hasCopyFilled && (
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }); setHeadlineVariants([]) }}>Clear</button>
+                    <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── DESIGN SECTION ── */}
+          <div style={{ borderBottom: '1px solid var(--border)' }}>
+            <button
+              onClick={() => toggleSection('design')}
+              style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              <span style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Design Direction
+                {stylePrompt && <span style={{ color: 'rgba(80,180,80,.7)', fontSize: 7 }}>✓</span>}
+              </span>
+              <span style={{ fontSize: 9, color: 'var(--text-3)', lineHeight: 1 }}>{openSections.design ? '▲' : '▼'}</span>
+            </button>
+            {openSections.design && (
+              <div style={{ padding: '0 14px 12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 10 }}>
+                  {[
+                    ['Subject dominant',    'Subject fills the frame. Type bows to it.'],
+                    ['Negative space',      'Build around open space. Subject and text breathe.'],
+                    ['Graphic tension',     'Visual tension between image and type.'],
+                    ['Editorial stillness', 'Magazine spread that stopped time.'],
+                    ['Layered depth',       'Type in its own plane, not on top.'],
+                    ['Cinematic',           'Feels like a still from a film.'],
+                  ].map(([label, p]) => (
+                    <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
+                      style={{ padding: '6px 8px', textAlign: 'left', fontSize: 8, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.3 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 1 }}>{label}</div>
+                      <div style={{ fontSize: 7, opacity: .5 }}>{p}</div>
+                    </button>
+                  ))}
+                </div>
+
+                <textarea className="textarea" value={stylePrompt} onChange={e => setStylePrompt(e.target.value)}
+                  rows={2} placeholder="Custom direction — composition and feeling only"
+                  style={{ fontSize: 11, resize: 'none', marginBottom: 10 }} />
+
+                <div style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>Reference Design</div>
+                {refImgDataUrl ? (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <img src={refImgDataUrl} alt="ref" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 'var(--r)', border: '1px solid var(--silver-edge)', display: 'block' }} />
+                      <button onClick={() => setRefImgDataUrl(null)} style={{ position: 'absolute', top: -4, right: -4, width: 14, height: 14, borderRadius: '50%', background: '#1A1A1A', border: '1px solid var(--border-2)', color: 'var(--text-3)', cursor: 'pointer', fontSize: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                    </div>
+                    <div style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>Claude will match this style</div>
+                  </div>
+                ) : (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', border: '1px dashed var(--border-2)', borderRadius: 'var(--r)', cursor: 'pointer', fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                    <input type="file" accept="image/*" onChange={handleRefImg} style={{ display: 'none' }} />
+                    ↑ Upload a design to match
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── VERSION HISTORY ── */}
+          {iterations.length > 1 && mode === 'post' && (
+            <div style={{ borderBottom: '1px solid var(--border)' }}>
+              <button
+                onClick={() => toggleSection('versions')}
+                style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <span style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', flex: 1 }}>
+                  Versions ({iterations.length})
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--text-3)', lineHeight: 1 }}>{openSections.versions ? '▲' : '▼'}</span>
+              </button>
+              {openSections.versions && (
+                <div style={{ padding: '0 14px 12px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                  {iterations.map((iter, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <div style={{ aspectRatio: '4/5', borderRadius: 3, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${iter.starred ? 'var(--amber)' : 'var(--border)'}`, transition: 'border-color .12s' }}
+                        onClick={() => { setDesignHtml(iter.html); setZoom(0) }} title={iter.prompt}>
+                        <div style={{ transform: `scale(${(((296-28)/3) - 4)/1080})`, transformOrigin: 'top left', width: 1080, height: 1350, pointerEvents: 'none' }}
+                          dangerouslySetInnerHTML={{ __html: iter.html }} />
+                      </div>
+                      <button onClick={() => setIterations(prev => prev.map((it, j) => j === i ? { ...it, starred: !it.starred } : it))}
+                        style={{ position: 'absolute', top: 3, left: 3, background: 'rgba(0,0,0,.6)', border: 'none', fontSize: 9, cursor: 'pointer', opacity: iter.starred ? 1 : .35, color: iter.starred ? 'var(--amber)' : '#fff', borderRadius: 2, padding: '1px 3px', backdropFilter: 'blur(4px)' }}>★</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+
+        {/* Keyboard hint */}
+        <div style={{ padding: '6px 14px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+          <span style={{ fontSize: 7, color: '#2A2A2A', fontFamily: 'var(--font-mono)', letterSpacing: '.08em' }}>Space fit · ←→ navigate</span>
+        </div>
+
+        {/* Generate + Export — sticky bottom */}
+        <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
             {generating ? <><span className="spin" /> {genStep || 'Generating…'}</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
           </button>
