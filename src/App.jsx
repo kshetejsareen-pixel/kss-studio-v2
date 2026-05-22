@@ -189,7 +189,7 @@ function AppInner() {
             <div className={`tab-panel ${activeTab === 'plan' ? 'active' : ''}`}>
               <PlanTab showToast={showToast} onTabChange={setActiveTab} />
             </div>
-            <div className={`tab-panel ${activeTab === 'studio' ? 'active' : ''}`}>
+            <div className={`tab-panel tab-panel--fill ${activeTab === 'studio' ? 'active' : ''}`}>
               <StudioTab showToast={showToast} />
             </div>
             <div className={`tab-panel ${activeTab === 'captions' ? 'active' : ''}`}>
