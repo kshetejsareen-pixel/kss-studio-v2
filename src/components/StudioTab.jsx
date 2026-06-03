@@ -17,49 +17,102 @@ const VISION_ANALYSIS_SYSTEM = `You are a visual composition analyst for a luxur
 }
 Return ONLY valid JSON.`
 
-const POST_SYSTEM = (handle, context, analysis, copy, website, direction) => `You are a director of design with the combined sensibility of M/M Paris, Peter Saville, and the art directors behind Acne Studios, Celine, and Bottega Veneta's visual identity. You create Instagram posts that feel like they were published in a limited-edition monograph, not designed on Canva.
+// Fonts pre-loaded in index.html — no @import needed in generated HTML
+const PRELOADED_FONTS = `SERIF: "Cormorant Garamond", "Bodoni Moda", "Playfair Display", "EB Garamond"
+SANS:  "Inter", "Space Grotesk"
+MONO:  "JetBrains Mono", "Space Mono"`
 
-Studio: ${handle}
-Brand context: ${context || 'Luxury commercial photography studio'}
-Website: ${website || 'www.kshetejsareen.com'}
-Image analysis — focal point: ${analysis?.focalPoint || 'centre'}, negative space: ${analysis?.negativeSpace || 'variable'}, suggested text zone: ${analysis?.suggestedTextZone || 'edge'}, mood: ${analysis?.mood || 'refined'}, palette: ${analysis?.colorPalette?.join(', ') || 'from image'}, composition: ${analysis?.composition || 'asymmetric'}, text contrast: ${analysis?.textContrast || 'light'}
+// Step 1 of 2: extract a style specification from a reference design image
+const REF_EXTRACT_SYSTEM = `Analyse this reference design image and return a precise style JSON. Return ONLY valid JSON:
+{
+  "shell": "caption-bottom-gradient | corner-whisper | centered-minimal | bottom-panel | edge-type | float-in-space",
+  "text_zone": "e.g. bottom-25%, top-left-corner, center-bottom-edge",
+  "text_alignment": "left | center | right",
+  "overlay": "describe CSS value or 'none'",
+  "headline_weight": 300,
+  "headline_size": "small | medium | large",
+  "headline_case": "uppercase | lowercase | mixed",
+  "headline_tracking": "tight | normal | wide | very-wide",
+  "type_feel": "warm-serif | cold-geometric | editorial-mono | neutral-sans",
+  "handle_position": "top-right | top-left | bottom-right | bottom-left | none",
+  "color_temperature": "warm | cool | neutral",
+  "overall_feel": "one short phrase"
+}`
 
-${copy?.headline ? `Copy to set:\n- Headline: "${copy.headline}"${copy.sub ? `\n- Sub: "${copy.sub}"` : ''}${copy.cta ? `\n- CTA: "${copy.cta}"` : ''}${copy.website ? `\n- Website: "${copy.website}"` : ''}` : ''}
-${direction ? `Directorial intent: ${direction}` : ''}
+// Step 1 of 2: generate a structured layout plan before writing any HTML
+const DESIGN_PLAN_SYSTEM = `You are a design director deciding the exact layout and typography for a luxury Instagram post. Output a JSON plan only — a separate step writes the HTML.
 
-DESIGN INTELLIGENCE — apply this thinking to every decision:
+PRE-LOADED FONTS (use exact names, no @import):
+${PRELOADED_FONTS}
 
-Typography as a compositional force:
-Typography doesn't fill space — it creates a relationship with the image. Consider: does the type whisper from a corner, letting the image breathe? Does it run along a strong vertical? Does it play with scale — tiny precise text against a vast image? The font must feel discovered, not chosen — a refined geometric sans for architectural tension, a humanist serif that honours the warmth of portraiture, a stark condensed for drama. Tracking and weight define temperature: wide-tracked light type reads as cold and precise; tighter, medium weight reads as intimate. Let the image's mood dictate.
+SHELLS — pick the one that matches where the negative space naturally lives:
+- "caption-bottom-gradient": full-bleed image, CSS gradient darkens lower portion, text sits in that zone
+- "corner-whisper": full-bleed image, small precise text block in one corner, no overlay
+- "centered-minimal": full-bleed image, one short line centered at the very bottom edge
+- "bottom-panel": image fills 78–85% height, solid-colour text panel below
+- "edge-type": text block runs vertically along the left or right edge
+- "float-in-space": text floats in the image's natural negative space, vignette only if essential
 
-Colour extracted, not applied:
-Read the image's own palette. Text colour should create the minimum necessary contrast — don't over-contrast. A warm near-white on a warm scene reads more sophisticated than pure white. If you use any overlay, it should be so subtle (5–15% opacity) it's felt rather than seen — a slight darkening of a bright zone, not a box.
+RULES:
+- Shell must follow the image's actual negative space — if space is at bottom, use caption-bottom-gradient
+- Font temperature must match mood: architectural/cold → geometric sans or condensed; warm/portrait/intimate → humanist italic serif; editorial/fashion → stark mono or geometric
+- Never more than 2 font families
+- Overlay only when the image has no natural dark zone for contrast
+- Large headline (48–72px) only for bold minimal compositions; editorial restraint = 22–40px
 
-Layout as a single decisive gesture:
-The strongest designs make one strong compositional decision, then everything else serves it. Don't scatter text across the image in multiple blocks. Find the one placement that creates the right tension with the image — text sitting in deep negative space, or text that frames the subject from outside the image zone, or a single line at the very bottom edge like a caption in a photography book.
+Return ONLY valid JSON, exactly this shape — no extra keys, no markdown:
+{
+  "shell": "...",
+  "overlay": "css value or 'none'",
+  "text_zone_css": "e.g. bottom:0; left:0; right:0; padding:40px 44px 48px",
+  "text_alignment": "left | center | right",
+  "font_headline": "exact name from list",
+  "weight_headline": 300,
+  "size_headline_px": 36,
+  "tracking_headline_em": 0.06,
+  "style_headline": "normal | italic",
+  "case_headline": "none | uppercase | lowercase",
+  "color_headline": "#hexcode",
+  "font_sub": "exact name from list",
+  "weight_sub": 400,
+  "size_sub_px": 11,
+  "tracking_sub_em": 0.2,
+  "case_sub": "uppercase | none",
+  "color_sub": "rgba or #hex",
+  "handle_position": "top-right | top-left | bottom-right | none",
+  "handle_size_px": 9,
+  "color_handle": "rgba or #hex",
+  "reasoning": "one sentence — the single key design decision"
+}`
 
-What separates luxury from generic:
-Luxury says one thing. Generic says many things loudly. The handle, the website, the CTA — they exist but they don't compete. The CTA is a whisper of invitation, not a button. The website is metadata, not marketing. The headline is a thought that completes the image, not a description of it. No category labels ("PORTRAIT", "EDITORIAL"). No decorative elements. No boxes around text. No justified text blocks. No stock-photo-template composition.
+// Step 2 of 2: execute a pre-approved plan as HTML
+const POST_SYSTEM = (handle, website, plan, copy) => `Implement this design plan as a 1080×1350px Instagram post HTML div.
 
-Technical requirements:
-- Inline styles only — @import Google Fonts in a <style> tag
-- Div exactly 1080×1350px, position:relative, overflow:hidden
-- Use src="[IMAGE_SRC]" for img, url('[IMAGE_SRC]') for CSS background
-- Image must be visible and dominant in the composition
-- Return ONLY the HTML div, nothing else`
+Studio: ${handle} · Website: ${website}
+${copy?.headline ? `Copy:\n  Headline: "${copy.headline}"${copy.sub ? `\n  Sub: "${copy.sub}"` : ''}${copy.cta ? `\n  CTA: "${copy.cta}"` : ''}` : 'No copy — handle and website only.'}
 
-const STORY_SYSTEM = (handle, context, analysis, copy, website, direction) => `You are a director of design with the sensibility of M/M Paris, Peter Saville, and Bottega Veneta's creative direction. Create an Instagram Story for ${handle}.
+PLAN — follow exactly, no deviations:
+${JSON.stringify(plan, null, 2)}
 
-Brand context: ${context || 'Luxury commercial photography'}
-Website: ${website || 'www.kshetejsareen.com'}
-Image mood: ${analysis?.mood || 'refined'} · palette: ${analysis?.colorPalette?.join(', ') || 'from image'} · text zone: ${analysis?.suggestedTextZone || 'edge'} · contrast: ${analysis?.textContrast || 'light'}
+FONTS are pre-loaded — use font-family directly, no @import.
+Available: Cormorant Garamond, Bodoni Moda, Playfair Display, EB Garamond, Inter, Space Grotesk, JetBrains Mono, Space Mono.
 
-${copy?.headline ? `Copy: "${copy.headline}"${copy.sub ? ` / "${copy.sub}"` : ''}${copy.cta ? ` / CTA: "${copy.cta}"` : ''}` : ''}
-${direction ? `Direction: ${direction}` : ''}
+RULES: Inline styles only. Div exactly 1080×1350px, position:relative, overflow:hidden.
+Use src="[IMAGE_SRC]" or url('[IMAGE_SRC]'). Image dominant.
+No decorative elements. No boxes around text. No button CTAs. No @import.
+Return ONLY the HTML div.`
 
-Apply the same design intelligence as for a post: type as a compositional element, colour from the image, one decisive layout gesture, no decorative elements, no category labels, no button-style CTAs. The 9:16 format creates a natural vertical canvas — use its height intentionally.
+const STORY_SYSTEM = (handle, website, plan, copy) => `Implement this design plan as a 1080×1920px Instagram Story HTML div.
 
-Technical: Inline styles. Div 1080×1920px. src="[IMAGE_SRC]". Image visible and dominant. Return ONLY HTML div.`
+Studio: ${handle} · Website: ${website}
+${copy?.headline ? `Copy: "${copy.headline}"${copy.sub ? ` / "${copy.sub}"` : ''}${copy.cta ? ` / CTA: "${copy.cta}"` : ''}` : 'No copy — handle only.'}
+
+PLAN — follow exactly:
+${JSON.stringify(plan, null, 2)}
+
+FONTS are pre-loaded — no @import. Use the 9:16 vertical canvas intentionally.
+Inline styles only. Div exactly 1080×1920px. src="[IMAGE_SRC]". Image dominant.
+No decorative elements. No button CTAs. Return ONLY the HTML div.`
 
 const COPY_SYSTEM = (handle, context, website, tone, imageAnalysis, visionDesc) => `You are writing Instagram copy for ${handle}, a luxury commercial photography studio.
 This post showcases work shot for a brand. Copy appears on the photographer's Instagram feed.
@@ -152,6 +205,7 @@ export default function StudioTab({ showToast }) {
   // Section collapse state
   const [openSections, setOpenSections] = useState({ copy: true, design: true, versions: false })
   const toggleSection = (key) => setOpenSections(s => ({ ...s, [key]: !s[key] }))
+  const [designPlan, setDesignPlan] = useState(null)
 
   // Chat panel
   const [chatOpen, setChatOpen]           = useState(false)
@@ -329,16 +383,16 @@ export default function StudioTab({ showToast }) {
     const context = state.globalContext
 
     try {
-      // Step 1 — Vision analysis for text placement
+      // Step 1 — Vision analysis
       let analysis = null
-      setGenStep('Analysing image composition…')
+      setGenStep('Analysing composition…')
       try {
         const raw = await claudeVision(key, VISION_ANALYSIS_SYSTEM, 'Analyse this image for layout purposes.', selectedImg.dataUrl, M_HAIKU, 400)
         const match = raw.match(/\{[\s\S]*\}/)
         if (match) analysis = JSON.parse(match[0])
       } catch { /* non-fatal */ }
 
-      // Step 1.5 — Auto-generate copy from brief if no headline
+      // Step 2 — Auto-generate copy from brief if no headline
       let activeCopy = copy
       if (!copy.headline && context) {
         setGenStep('Generating copy from brief…')
@@ -361,41 +415,49 @@ export default function StudioTab({ showToast }) {
             setCopy(freshCopy)
             activeCopy = freshCopy
           }
-        } catch { /* non-fatal — proceed without copy */ }
+        } catch { /* non-fatal */ }
       }
 
-      // Step 2 — Generate design
-      setGenStep('Generating design…')
-      const hasCopy = activeCopy.headline || activeCopy.sub || activeCopy.tagline
-      const system = isStory
-        ? STORY_SYSTEM(handle, context, analysis, hasCopy ? activeCopy : null, website, stylePrompt)
-        : POST_SYSTEM(handle, context, analysis, hasCopy ? activeCopy : null, website, stylePrompt)
-
-      const prompt = `Generate a ${isStory ? '1080×1920 Instagram Story' : '1080×1350 Instagram Post'} design.
-Handle: ${handle} · Website: ${website}
-CRITICAL: Use src="[IMAGE_SRC]" for the subject image. Div must be exactly ${w}px × ${h}px.
-Think like a director of design — derive everything from the image itself.`
-
-      let raw
+      // Step 3 — Extract reference style if a reference image is provided
+      let refStyle = null
       if (refImgDataUrl) {
-        const bs = extractBase64(await resizeImage(selectedImg.dataUrl, 800))
-        const br = extractBase64(await resizeImage(refImgDataUrl, 600))
-        const r = await fetch(PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: M_OPUS, max_tokens: 4000, system, messages: [{ role: 'user', content: [
-            { type: 'text', text: 'Subject image:' },
-            { type: 'image', source: { type: 'base64', media_type: bs.mediaType, data: bs.data } },
-            { type: 'text', text: 'Reference image (match this style):' },
-            { type: 'image', source: { type: 'base64', media_type: br.mediaType, data: br.data } },
-            { type: 'text', text: prompt },
-          ]}] }),
-        })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        raw = (await r.json()).content?.find(b => b.type === 'text')?.text
-      } else {
-        raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 4000)
+        setGenStep('Reading reference style…')
+        try {
+          const rawRef = await claudeVision(key, REF_EXTRACT_SYSTEM, 'Extract the style spec from this reference design.', refImgDataUrl, M_SONNET, 400)
+          const rm = rawRef.match(/\{[\s\S]*\}/)
+          if (rm) refStyle = JSON.parse(rm[0])
+        } catch { /* non-fatal */ }
       }
+
+      // Step 4 — Design planning (Sonnet decides layout/typography before Opus writes HTML)
+      setGenStep('Planning layout…')
+      let plan = null
+      try {
+        const hasCopy = activeCopy.headline || activeCopy.sub || activeCopy.tagline
+        const planPrompt = [
+          `Image analysis: ${JSON.stringify(analysis || {})}`,
+          hasCopy ? `Copy: headline="${activeCopy.headline}" sub="${activeCopy.sub || ''}" cta="${activeCopy.cta || ''}"` : 'No copy.',
+          context ? `Brand brief: ${context.slice(0, 400)}` : '',
+          refStyle ? `Reference style constraints: ${JSON.stringify(refStyle)}` : '',
+          stylePrompt ? `Direction: ${stylePrompt}` : '',
+          `Format: ${isStory ? '9:16 story (1080×1920)' : '4:5 post (1080×1350)'}`,
+        ].filter(Boolean).join('\n')
+        const rawPlan = await claudeCall(key, DESIGN_PLAN_SYSTEM, planPrompt, M_SONNET, 500)
+        const pm = rawPlan.match(/\{[\s\S]*\}/)
+        if (pm) { plan = JSON.parse(pm[0]); setDesignPlan(plan) }
+      } catch { /* non-fatal — fall back to open-ended generation */ }
+
+      // Step 5 — Execute HTML from plan (Opus)
+      setGenStep('Generating design…')
+      const hasCopyFinal = activeCopy.headline || activeCopy.sub || activeCopy.tagline
+      const system = isStory
+        ? STORY_SYSTEM(handle, website, plan, hasCopyFinal ? activeCopy : null)
+        : POST_SYSTEM(handle, website, plan, hasCopyFinal ? activeCopy : null)
+
+      const prompt = `Generate the ${isStory ? '1080×1920 Story' : '1080×1350 Post'} HTML now.
+Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML div.`
+
+      const raw = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 4000)
 
       if (!raw) throw new Error('Empty response')
       let html = raw.trim().replace(/^```html\n?/, '').replace(/\n?```$/, '').trim()
@@ -806,6 +868,23 @@ Think like a director of design — derive everything from the image itself.`
               </div>
             )}
           </div>
+
+          {/* ── LAST DESIGN PLAN ── */}
+          {designPlan && (
+            <div style={{ borderBottom: '1px solid var(--border)', padding: '10px 14px' }}>
+              <div style={{ fontSize: 7, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 6 }}>Last Design Plan</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--silver)', background: 'var(--silver-ghost)', border: '1px solid var(--silver-edge)', borderRadius: 2, padding: '2px 6px' }}>{designPlan.shell}</span>
+                  <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text-2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 6px' }}>{designPlan.font_headline} {designPlan.weight_headline} {designPlan.style_headline !== 'normal' ? designPlan.style_headline : ''}</span>
+                  <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--text-2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 6px' }}>{designPlan.size_headline_px}px</span>
+                </div>
+                {designPlan.reasoning && (
+                  <div style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'var(--font-body)', lineHeight: 1.5, fontStyle: 'italic' }}>{designPlan.reasoning}</div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── VERSION HISTORY ── */}
           {iterations.length > 1 && mode === 'post' && (
