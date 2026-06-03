@@ -57,6 +57,15 @@ export default function SettingsTab({ showToast }) {
               onChange={e => setSettings({ igAccountId: e.target.value })}
             />
           </div>
+          <div className="field">
+            <div className="field-label">Ad Account ID</div>
+            <input
+              className="input"
+              placeholder="act_XXXXXXXXXX"
+              value={s.adAccountId}
+              onChange={e => setSettings({ adAccountId: e.target.value })}
+            />
+          </div>
         </div>
       </div>
 

@@ -46,6 +46,7 @@ const initialState = {
     cloudPreset: saved.cloudPreset || 'ml_default',
     metaToken: saved.metaToken || '',
     igAccountId: saved.igAccountId || '',
+    adAccountId: saved.adAccountId || '',
   },
   activeTab: 'plan',
   inspectIdx: null,

@@ -4,6 +4,7 @@ import { useToast } from './hooks/useToast.js'
 import DriveModal from './components/DriveModal.jsx'
 import PlanTab from './components/PlanTab.jsx'
 import StudioTab from './components/StudioTab.jsx'
+import AdTab from './components/AdTab.jsx'
 import CaptionsTab from './components/CaptionsTab.jsx'
 import ScheduleTab from './components/ScheduleTab.jsx'
 import SettingsTab from './components/SettingsTab.jsx'
@@ -11,6 +12,7 @@ import SettingsTab from './components/SettingsTab.jsx'
 const TABS = [
   { id: 'plan',     label: 'Plan' },
   { id: 'studio',   label: 'Studio' },
+  { id: 'ad',       label: 'Ad' },
   { id: 'captions', label: 'Captions' },
   { id: 'schedule', label: 'Schedule' },
   { id: 'settings', label: 'Settings' },
@@ -191,6 +193,9 @@ function AppInner() {
             </div>
             <div className={`tab-panel tab-panel--fill ${activeTab === 'studio' ? 'active' : ''}`}>
               <StudioTab showToast={showToast} />
+            </div>
+            <div className={`tab-panel tab-panel--fill ${activeTab === 'ad' ? 'active' : ''}`}>
+              <AdTab showToast={showToast} />
             </div>
             <div className={`tab-panel ${activeTab === 'captions' ? 'active' : ''}`}>
               <CaptionsTab showToast={showToast} />
