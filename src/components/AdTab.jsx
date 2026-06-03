@@ -96,7 +96,7 @@ function charMeta(text, limit) {
   const len = (text || '').length
   const over = len > limit
   const warn = len > limit * 0.88
-  const color = over ? 'rgba(220,70,70,.9)' : warn ? 'rgba(220,160,0,.85)' : 'var(--text3)'
+  const color = over ? 'rgba(220,70,70,.9)' : warn ? 'rgba(220,160,0,.85)' : 'var(--text2)'
   return { len, over, color }
 }
 
@@ -241,7 +241,7 @@ export default function AdTab({ showToast }) {
       {/* ── LEFT: IMAGE SELECTOR ── */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
         <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          <span style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
             {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -270,9 +270,9 @@ export default function AdTab({ showToast }) {
             {OBJECTIVES.find(o => o.id === objective)?.label}
           </span>
           <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
-          <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{activePlacement?.label}</span>
+          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{activePlacement?.label}</span>
           <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
-          <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{FUNNEL.find(f => f.id === funnel)?.label}</span>
+          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{FUNNEL.find(f => f.id === funnel)?.label}</span>
           {variants.length > 0 && (
             <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setVariants([])}>Clear</button>
           )}
@@ -281,7 +281,7 @@ export default function AdTab({ showToast }) {
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
           {variants.length === 0 ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text3)' }}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text2)' }}>
               {selectedImg ? (
                 <>
                   <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 180, maxWidth: '45%', objectFit: 'contain', opacity: .12, borderRadius: 4 }} />
@@ -318,7 +318,7 @@ export default function AdTab({ showToast }) {
                       {/* Variant label */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <span style={{ fontSize: 7, color: 'rgba(80,150,240,.7)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{v.angle}</span>
-                        <span style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>#{i + 1}</span>
+                        <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>#{i + 1}</span>
                       </div>
 
                       {/* Hook */}
@@ -334,7 +334,7 @@ export default function AdTab({ showToast }) {
                       ].map(([label, text, meta, limit]) => (
                         <div key={label}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                            <span style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{label}</span>
+                            <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{label}</span>
                             <span style={{ fontSize: 7, fontFamily: 'var(--font-mono)', color: meta.color }}>{meta.len}/{limit}</span>
                           </div>
                           <div style={{ fontSize: 10, color: meta.over ? 'rgba(220,90,90,.9)' : 'var(--text2)', fontFamily: 'var(--font-body)', lineHeight: 1.45 }}>{text}</div>
@@ -343,7 +343,7 @@ export default function AdTab({ showToast }) {
 
                       {/* CTA chip */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>CTA</span>
+                        <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>CTA</span>
                         <span style={{ fontSize: 8, color: 'var(--silver)', fontFamily: 'var(--font-mono)', background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 7px' }}>
                           {CTA_LABELS[v.cta] || v.cta}
                         </span>
@@ -381,12 +381,12 @@ export default function AdTab({ showToast }) {
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
-                <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{selectedImg.width}×{selectedImg.height}</div>
+                <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{selectedImg.width}×{selectedImg.height}</div>
               </div>
             </div>
           )}
           <div>
-            <div style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 4 }}>Ad Brief</div>
+            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 4 }}>Ad Brief</div>
             <textarea
               className="textarea"
               value={adContext}
@@ -403,13 +403,13 @@ export default function AdTab({ showToast }) {
 
           {/* Objective */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Objective</div>
+            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Objective</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
               {OBJECTIVES.map(o => (
                 <button key={o.id} onClick={() => setObjective(o.id)}
                   style={{ padding: '7px 8px', textAlign: 'left', background: objective === o.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${objective === o.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', cursor: 'pointer', lineHeight: 1.3 }}>
                   <div style={{ fontSize: 9, fontWeight: 600, color: objective === o.id ? 'var(--silver)' : 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{o.label}</div>
-                  <div style={{ fontSize: 7, color: 'var(--text3)', marginTop: 1 }}>{o.desc}</div>
+                  <div style={{ fontSize: 7, color: 'var(--text2)', marginTop: 1 }}>{o.desc}</div>
                 </button>
               ))}
             </div>
@@ -417,11 +417,11 @@ export default function AdTab({ showToast }) {
 
           {/* Placement */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Placement</div>
+            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Placement</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
               {PLACEMENTS.map(p => (
                 <button key={p.id} onClick={() => setPlacement(p.id)}
-                  style={{ padding: '6px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: placement === p.id ? 'var(--silver)' : 'var(--text3)', cursor: 'pointer', lineHeight: 1.3 }}>
+                  style={{ padding: '6px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: placement === p.id ? 'var(--silver)' : 'var(--text2)', cursor: 'pointer', lineHeight: 1.3 }}>
                   <div style={{ fontWeight: 600 }}>{p.label}</div>
                   <div style={{ fontSize: 7, opacity: .6, marginTop: 1 }}>{p.w}×{p.h}</div>
                 </button>
@@ -431,13 +431,13 @@ export default function AdTab({ showToast }) {
 
           {/* Funnel stage */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Audience Temperature</div>
+            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Audience Temperature</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {FUNNEL.map(f => (
                 <button key={f.id} onClick={() => setFunnel(f.id)}
                   style={{ padding: '7px 10px', textAlign: 'left', background: funnel === f.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${funnel === f.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 9, fontWeight: 600, color: funnel === f.id ? 'var(--silver)' : 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 36 }}>{f.label}</span>
-                  <span style={{ fontSize: 8, color: 'var(--text3)', lineHeight: 1.3 }}>{f.desc}</span>
+                  <span style={{ fontSize: 8, color: 'var(--text2)', lineHeight: 1.3 }}>{f.desc}</span>
                 </button>
               ))}
             </div>
@@ -445,14 +445,14 @@ export default function AdTab({ showToast }) {
 
           {/* Meta Publishing */}
           <div style={{ padding: '10px 14px' }}>
-            <div style={{ fontSize: 7, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Meta Ads Manager</div>
+            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Meta Ads Manager</div>
             {!state.settings.adAccountId ? (
-              <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
                 Add your <span style={{ color: 'rgba(80,140,230,.7)' }}>Ad Account ID</span> in Settings to push creatives directly to Ads Manager.
               </div>
             ) : variants.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
                   Variant #{selectedIdx + 1} · {CTA_LABELS[variants[selectedIdx]?.cta] || '—'}
                 </div>
                 <button className="btn btn-ghost btn-sm btn-full"
@@ -466,7 +466,7 @@ export default function AdTab({ showToast }) {
                 )}
               </div>
             ) : (
-              <div style={{ fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
                 Generate variants to enable publishing.
               </div>
             )}
