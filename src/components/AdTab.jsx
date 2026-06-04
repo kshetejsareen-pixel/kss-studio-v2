@@ -38,7 +38,7 @@ const CTA_LABELS = {
 
 // ── SYSTEM PROMPT ─────────────────────────────────────────
 
-const AD_SYSTEM = (context, objective, placement, funnel) => {
+const AD_SYSTEM = (context, objective, placement, funnel, advPlus = false) => {
   const objStrategy = {
     OUTCOME_AWARENESS:     'Write for memorability, not clicks. Brand voice and visual recall matter most. No hard sell.',
     OUTCOME_TRAFFIC:       'Lead with value or curiosity. Make them want to know more. The CTA should feel inevitable.',
@@ -74,6 +74,14 @@ LUXURY COPY RULES:
 - Banned words: stunning, amazing, perfect, best, incredible, take your brand to the next level.
 - Brand voice from the brief must come through in rhythm and word choice.
 - 3 variants must have genuinely different angles — not just synonym swaps.
+${advPlus ? `
+ADVANTAGE+ MODE — AUDIENCE SIGNAL COPY:
+Meta's Advantage+ AI reads your copy text to determine who to show this ad to — there is no manual interest targeting. You must embed the intended client type naturally in the hook and primary text so the algorithm can self-target. Do not address the audience generically.
+Examples of strong audience signals:
+- "For interior designers who want their projects remembered..."
+- "For founders who understand that the product is only half the story..."
+- "For F&B brands where the visual is the first bite..."
+The signal must feel native to the brand voice — not a demographic tag. Each of the 3 variants should signal a different client type or intent so Advantage+ can test which segment responds.` : ''}
 
 Generate exactly 3 variants. Return ONLY valid JSON, no markdown:
 {
@@ -136,6 +144,7 @@ export default function AdTab({ showToast }) {
   const [selectedIdx, setSelectedIdx]         = useState(0)
   const [publishing, setPublishing]           = useState(false)
   const [showBrief, setShowBrief]             = useState(false)
+  const [advPlus, setAdvPlus]                 = useState(false)
   const [targetingOpen, setTargetingOpen]     = useState(false)
   const [targeting, setTargeting]             = useState({
     ageMin: 25, ageMax: 55,
@@ -161,7 +170,7 @@ export default function AdTab({ showToast }) {
     if (!selectedImg)  { showToast('Select an image first');  return }
     setGenerating(true)
     try {
-      const system = AD_SYSTEM(adContext, objective, placement, funnel)
+      const system = AD_SYSTEM(adContext, objective, placement, funnel, advPlus)
       const prompt = `Look at this image. It is the visual creative for an Instagram ${placement} ad. Generate 3 copy variants for it.`
       const raw    = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 1600)
       const match  = raw.match(/\{[\s\S]*\}/)
@@ -175,7 +184,7 @@ export default function AdTab({ showToast }) {
       }
     } catch(e) { showToast('Generation failed: ' + e.message) }
     finally { setGenerating(false) }
-  }, [state, selectedImg, adContext, objective, placement, funnel, showToast])
+  }, [state, selectedImg, adContext, objective, placement, funnel, advPlus, showToast])
 
   // ── Copy to clipboard ─────────────────────────────────
 
@@ -237,6 +246,35 @@ export default function AdTab({ showToast }) {
     })
     showToast('Downloading 3 images…')
   }, [selectedImg, activePlacement, placement, variants, showToast])
+
+  // ── Download image in all 3 Advantage+ formats ────────
+
+  const downloadAllFormats = useCallback(() => {
+    if (!selectedImg) return
+    const formats = [
+      { label: 'feed',   w: 1080, h: 1350 },
+      { label: 'stories', w: 1080, h: 1920 },
+      { label: 'reels',  w: 1080, h: 1920 },
+    ]
+    formats.forEach(({ label, w, h }, i) => {
+      setTimeout(() => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = w; canvas.height = h
+          const ctx = canvas.getContext('2d')
+          const scale = Math.max(w / img.width, h / img.height)
+          ctx.drawImage(img, (w - img.width * scale) / 2, (h - img.height * scale) / 2, img.width * scale, img.height * scale)
+          const a = document.createElement('a')
+          a.download = `ad-${label}-${w}x${h}.jpg`
+          a.href = canvas.toDataURL('image/jpeg', 0.93)
+          a.click()
+        }
+        img.src = selectedImg.dataUrl
+      }, i * 700)
+    })
+    showToast('Feed + Stories + Reels downloading…')
+  }, [selectedImg, showToast])
 
   // ── Targeting helpers ─────────────────────────────────
 
@@ -444,6 +482,16 @@ export default function AdTab({ showToast }) {
               </button>
             ))}
           </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 10px', flexShrink: 0 }} />
+
+          {/* Advantage+ toggle */}
+          <button onClick={() => setAdvPlus(a => !a)}
+            title={advPlus ? 'Advantage+ ON — AI self-targets from creative signals. Click to switch to manual.' : 'Advantage+ OFF — using manual interest targeting. Click to enable AI targeting.'}
+            style={{ padding: '3px 10px', fontSize: 8, fontFamily: 'var(--font-mono)', background: advPlus ? 'rgba(100,120,255,.15)' : 'none', border: `1px solid ${advPlus ? 'rgba(100,120,255,.5)' : 'var(--border)'}`, borderRadius: 2, color: advPlus ? 'rgba(140,160,255,.95)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: advPlus ? 600 : 400 }}>
+            {advPlus ? '⚡ Adv+ ON' : 'Adv+'}
+          </button>
         </div>
 
         {/* ── VARIANT AREA ── */}
@@ -596,6 +644,16 @@ export default function AdTab({ showToast }) {
           {targetingOpen && (
             <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: 320, overflowY: 'auto' }}>
 
+              {/* Advantage+ notice */}
+              {advPlus && (
+                <div style={{ padding: '8px 10px', background: 'rgba(100,120,255,.07)', border: '1px solid rgba(100,120,255,.25)', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>⚡</span>
+                  <div style={{ fontSize: 9, color: 'rgba(160,175,255,.85)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
+                    <strong style={{ color: 'rgba(180,190,255,.95)' }}>Advantage+ Audience is ON.</strong> Set broad demographics below — no interests needed. Meta AI will self-target based on your creative. In Ads Manager, select "Advantage+ Audience" at the Ad Set level.
+                  </div>
+                </div>
+              )}
+
               {/* Demographics row */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
 
@@ -641,8 +699,8 @@ export default function AdTab({ showToast }) {
                 </div>
               </div>
 
-              {/* Cities */}
-              <div>
+              {/* Cities — hidden in Advantage+ mode */}
+              {!advPlus && <div>
                 <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>Cities</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {INDIA_CITIES.map(city => {
@@ -658,10 +716,10 @@ export default function AdTab({ showToast }) {
                 {targeting.cities.length === 0 && (
                   <div style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 4, opacity: .6 }}>None selected — targeting all of India</div>
                 )}
-              </div>
+              </div>}
 
-              {/* Interests */}
-              <div>
+              {/* Interests — hidden in Advantage+ mode */}
+              {!advPlus && <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Interests</div>
                   <div style={{ fontSize: 7, color: 'rgba(80,140,230,.55)', fontFamily: 'var(--font-mono)' }}>IDs resolve via Meta API when token is added</div>
@@ -684,7 +742,7 @@ export default function AdTab({ showToast }) {
                     </div>
                   ))}
                 </div>
-              </div>
+              </div>}
 
               {/* Token pending notice */}
               {!state.settings.metaToken && (
@@ -703,6 +761,12 @@ export default function AdTab({ showToast }) {
           </button>
           {variants.length > 0 && (
             <>
+              {selectedImg && (
+                <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={downloadAllFormats}
+                  title="Download Feed 4:5 + Stories 9:16 + Reels 9:16 for Advantage+ placements">
+                  ↓ All Formats
+                </button>
+              )}
               <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowBrief(true)}
                 title="Export full campaign brief — copy/paste into Meta Ads Manager">
                 ↗ Export Brief
@@ -772,11 +836,13 @@ export default function AdTab({ showToast }) {
                     ['Ad Set name',   `${activePlacement?.label} · ${targeting.cities.length ? targeting.cities.slice(0,3).join(', ') : 'India'} · ${targeting.ageMin}–${targeting.ageMax}`],
                     ['Daily budget',  `₹${targeting.budgetDaily.toLocaleString()}`],
                     ['Schedule',      targeting.ongoing ? 'Set start date, no end date' : `Start: ${targeting.startDate}`],
-                    ['Locations',     targeting.cities.length ? targeting.cities.join(', ') : 'India (country-level)'],
+                    ['Audience mode',  advPlus ? 'Advantage+ Audience — toggle it ON at the top of the Audience section. Set suggested demographic only, leave interests empty.' : 'Manual targeting'],
+                    ['Locations',     !advPlus && targeting.cities.length ? targeting.cities.join(', ') : 'India (country-level)'],
                     ['Age',           `${targeting.ageMin} – ${targeting.ageMax}`],
-                    ['Gender',        targeting.genders.length === 0 ? 'All genders' : targeting.genders.includes(1) && targeting.genders.includes(2) ? 'All genders' : targeting.genders[0] === 1 ? 'Men only' : 'Women only'],
-                    ['Detailed targeting', targeting.interests.length ? targeting.interests.join(', ') + '\n(search each one in the "Add interests" field)' : 'Add interests relevant to your campaign'],
-                    ['Placements',    `Manual placements → Instagram only → ${placement === 'feed' ? 'Feed' : placement === 'story' ? 'Stories' : placement === 'reels' ? 'Reels' : 'Feed'}`],
+                    ['Gender',        targeting.genders.length === 0 ? 'All genders' : targeting.genders[0] === 1 ? 'Men only' : 'Women only'],
+                    ...(!advPlus && targeting.interests.length ? [['Detailed targeting', targeting.interests.join(', ') + '\n(search each one in the "Add interests" field)']] : []),
+                    ['Placements',    advPlus ? 'Advantage+ placements — leave on Automatic. Meta tests Feed, Stories, Reels.' : `Manual → Instagram only → ${placement === 'feed' ? 'Feed' : placement === 'story' ? 'Stories' : 'Reels'}`],
+                    ...(advPlus ? [['Advantage+ Creative', 'Enable at the Ad level — Meta auto-generates creative variants']] : []),
                   ].map(([label, val]) => (
                     <>
                       <div key={`l-${label}`} style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', paddingTop: 2 }}>{label}</div>
