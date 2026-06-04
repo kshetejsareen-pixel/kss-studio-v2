@@ -135,6 +135,7 @@ export default function AdTab({ showToast }) {
   const [generating, setGenerating]           = useState(false)
   const [selectedIdx, setSelectedIdx]         = useState(0)
   const [publishing, setPublishing]           = useState(false)
+  const [showBrief, setShowBrief]             = useState(false)
   const [targetingOpen, setTargetingOpen]     = useState(false)
   const [targeting, setTargeting]             = useState({
     ageMin: 25, ageMax: 55,
@@ -211,6 +212,31 @@ export default function AdTab({ showToast }) {
     }
     img.src = selectedImg.dataUrl
   }, [selectedImg, activePlacement, placement, showToast])
+
+  // ── Download all 3 images (staggered) ────────────────
+
+  const downloadAll = useCallback(() => {
+    if (!selectedImg || !activePlacement) return
+    const { w, h } = activePlacement
+    variants.forEach((_, i) => {
+      setTimeout(() => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = w; canvas.height = h
+          const ctx = canvas.getContext('2d')
+          const scale = Math.max(w / img.width, h / img.height)
+          ctx.drawImage(img, (w - img.width * scale) / 2, (h - img.height * scale) / 2, img.width * scale, img.height * scale)
+          const a = document.createElement('a')
+          a.download = `ad-v${i + 1}-${placement}-${w}x${h}.jpg`
+          a.href = canvas.toDataURL('image/jpeg', 0.93)
+          a.click()
+        }
+        img.src = selectedImg.dataUrl
+      }, i * 600)
+    })
+    showToast('Downloading 3 images…')
+  }, [selectedImg, activePlacement, placement, variants, showToast])
 
   // ── Targeting helpers ─────────────────────────────────
 
@@ -676,16 +702,150 @@ export default function AdTab({ showToast }) {
             {generating ? <><span className="spin" /> Generating variants&hellip;</> : '✦ Generate 3 Ad Variants'}
           </button>
           {variants.length > 0 && (
-            <button className="btn btn-ghost btn-sm"
-              style={{ color: state.settings.metaToken ? 'rgba(74,122,191,.9)' : 'var(--mute)', borderColor: state.settings.metaToken ? 'rgba(74,122,191,.3)' : 'var(--border)', flexShrink: 0 }}
-              onClick={() => v && pushCampaign(v)}
-              disabled={publishing || !state.settings.metaToken || !state.settings.adAccountId}
-              title={!state.settings.metaToken ? 'Meta token verification pending' : 'Push full campaign to Meta Ads Manager'}>
-              {publishing ? <><span className="spin" /> Pushing&hellip;</> : !state.settings.metaToken ? '⏳ Token pending' : '↑ Push Campaign'}
-            </button>
+            <>
+              <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowBrief(true)}
+                title="Export full campaign brief — copy/paste into Meta Ads Manager">
+                ↗ Export Brief
+              </button>
+              <button className="btn btn-ghost btn-sm"
+                style={{ color: state.settings.metaToken ? 'rgba(74,122,191,.9)' : 'var(--mute)', borderColor: state.settings.metaToken ? 'rgba(74,122,191,.3)' : 'var(--border)', flexShrink: 0 }}
+                onClick={() => v && pushCampaign(v)}
+                disabled={publishing || !state.settings.metaToken || !state.settings.adAccountId}
+                title={!state.settings.metaToken ? 'Meta token verification pending' : 'Push full campaign to Meta Ads Manager'}>
+                {publishing ? <><span className="spin" /> Pushing&hellip;</> : !state.settings.metaToken ? '⏳ Token pending' : '↑ Push Campaign'}
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {/* ── EXPORT BRIEF MODAL ── */}
+      {showBrief && variants.length > 0 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', backdropFilter: 'blur(6px)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={e => e.target === e.currentTarget && setShowBrief(false)}>
+          <div style={{ background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 8, width: '100%', maxWidth: 760, maxHeight: '88vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+            {/* Modal header */}
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--silver)', fontFamily: 'var(--font-mono)', letterSpacing: '.08em', textTransform: 'uppercase' }}>Campaign Brief</div>
+                <div style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                  {OBJECTIVES.find(o => o.id === objective)?.label} · {activePlacement?.label} · {FUNNEL.find(f => f.id === funnel)?.label} · {targetingSummary()}
+                </div>
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                {selectedImg && (
+                  <button className="btn btn-ghost btn-sm" onClick={downloadAll}>
+                    ↓ Download all {variants.length} images
+                  </button>
+                )}
+                <button onClick={() => setShowBrief(false)} style={{ background: 'none', border: 'none', color: 'var(--mute)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 4 }}>✕</button>
+              </div>
+            </div>
+
+            {/* Meta Ads Manager field-by-field instructions */}
+            <div style={{ overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+              {/* Campaign setup */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '12px 14px' }}>
+                <div style={{ fontSize: 9, color: 'rgba(80,160,240,.8)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 10 }}>Step 1 — Campaign (one time)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px', alignItems: 'start' }}>
+                  {[
+                    ['Campaign name',  `KSS · ${OBJECTIVES.find(o => o.id === objective)?.label} · ${new Date().toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`],
+                    ['Objective',      OBJECTIVES.find(o => o.id === objective)?.label + ' — select this in the "Campaign objective" screen'],
+                    ['Special categories', 'None — leave all unchecked'],
+                    ['Campaign budget', 'Off — set budget at Ad Set level'],
+                  ].map(([label, val]) => (
+                    <>
+                      <div key={`l-${label}`} style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', paddingTop: 2 }}>{label}</div>
+                      <CopyRow key={`v-${label}`} text={val} />
+                    </>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ad Set */}
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '12px 14px' }}>
+                <div style={{ fontSize: 9, color: 'rgba(80,160,240,.8)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 10 }}>Step 2 — Ad Set (targeting + budget)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px', alignItems: 'start' }}>
+                  {[
+                    ['Ad Set name',   `${activePlacement?.label} · ${targeting.cities.length ? targeting.cities.slice(0,3).join(', ') : 'India'} · ${targeting.ageMin}–${targeting.ageMax}`],
+                    ['Daily budget',  `₹${targeting.budgetDaily.toLocaleString()}`],
+                    ['Schedule',      targeting.ongoing ? 'Set start date, no end date' : `Start: ${targeting.startDate}`],
+                    ['Locations',     targeting.cities.length ? targeting.cities.join(', ') : 'India (country-level)'],
+                    ['Age',           `${targeting.ageMin} – ${targeting.ageMax}`],
+                    ['Gender',        targeting.genders.length === 0 ? 'All genders' : targeting.genders.includes(1) && targeting.genders.includes(2) ? 'All genders' : targeting.genders[0] === 1 ? 'Men only' : 'Women only'],
+                    ['Detailed targeting', targeting.interests.length ? targeting.interests.join(', ') + '\n(search each one in the "Add interests" field)' : 'Add interests relevant to your campaign'],
+                    ['Placements',    `Manual placements → Instagram only → ${placement === 'feed' ? 'Feed' : placement === 'story' ? 'Stories' : placement === 'reels' ? 'Reels' : 'Feed'}`],
+                  ].map(([label, val]) => (
+                    <>
+                      <div key={`l-${label}`} style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', paddingTop: 2 }}>{label}</div>
+                      <CopyRow key={`v-${label}`} text={val} />
+                    </>
+                  ))}
+                </div>
+              </div>
+
+              {/* The 3 ads */}
+              {variants.map((vv, i) => (
+                <div key={i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ fontSize: 9, color: 'rgba(80,160,240,.8)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', flex: 1 }}>
+                      Step {3 + i} — Ad {i + 1} of {variants.length}: {vv.angle}
+                    </div>
+                    <button className="btn btn-ghost btn-xs" onClick={() => {
+                      const text = `AD ${i+1}: ${vv.angle}\n\nPRIMARY TEXT:\n${vv.primaryText}\n\nHEADLINE:\n${vv.headline}\n\nDESCRIPTION:\n${vv.description}\n\nCTA: ${CTA_LABELS[vv.cta] || vv.cta}`
+                      navigator.clipboard.writeText(text).then(() => showToast(`Ad ${i+1} copied ✓`))
+                    }}>Copy all</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px', alignItems: 'start' }}>
+                    {[
+                      ['Ad name',        `Ad ${i+1} · ${vv.angle}`],
+                      ['Image',          `Download "ad-v${i+1}-${placement}-${activePlacement?.w}x${activePlacement?.h}.jpg" from KSS Studio → upload here`],
+                      ['Primary text',   vv.primaryText],
+                      ['Headline',       vv.headline],
+                      ['Description',    vv.description],
+                      ['Call to action', CTA_LABELS[vv.cta] || vv.cta],
+                      ['Website URL',    'https://www.kshetejsareen.com'],
+                    ].map(([label, val]) => (
+                      <>
+                        <div key={`l-${label}`} style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', paddingTop: 2 }}>{label}</div>
+                        <CopyRow key={`v-${label}`} text={val} muted={val.startsWith('Download')} />
+                      </>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Final note */}
+              <div style={{ padding: '10px 12px', background: 'rgba(80,160,80,.05)', border: '1px solid rgba(80,160,80,.15)', borderRadius: 4, fontSize: 9, color: 'rgba(80,180,80,.7)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
+                ✓ Create all 3 ads inside the same Ad Set — Meta will automatically optimise delivery between them (Dynamic Creative Testing).<br/>
+                ✓ Leave all ads in Review state — do not publish until you have reviewed the preview on mobile.<br/>
+                ✓ After review, set Status to Active on all 3 together.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Inline copy-row helper — copyable field value
+function CopyRow({ text, muted }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+      <div style={{ fontSize: 10, color: muted ? 'var(--mute)' : 'var(--text2)', fontFamily: muted ? 'var(--font-mono)' : 'var(--font-body)', lineHeight: 1.5, flex: 1, whiteSpace: 'pre-wrap' }}>{text}</div>
+      {!muted && (
+        <button onClick={copy}
+          style={{ flexShrink: 0, marginTop: 1, padding: '2px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: copied ? 'rgba(80,180,80,.12)' : 'none', border: `1px solid ${copied ? 'rgba(80,180,80,.3)' : 'var(--border)'}`, borderRadius: 2, color: copied ? 'rgba(80,180,80,.8)' : 'var(--mute)', cursor: 'pointer', transition: 'all .15s' }}>
+          {copied ? '✓' : 'Copy'}
+        </button>
+      )}
     </div>
   )
 }
