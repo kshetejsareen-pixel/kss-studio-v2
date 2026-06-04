@@ -90,6 +90,27 @@ Generate exactly 3 variants. Return ONLY valid JSON, no markdown:
 }`
 }
 
+// ── TARGETING DATA ────────────────────────────────────────
+// Interest names — IDs resolved via /search?type=adinterest when token available
+const INTEREST_GROUPS = [
+  { group: 'Photography & Creative', items: ['Photography', 'Commercial photography', 'Fashion photography', 'Product photography', 'Advertising'] },
+  { group: 'Design & Space',         items: ['Interior design', 'Architecture', 'Interior architecture', 'Home decoration', 'Furniture'] },
+  { group: 'Luxury & Lifestyle',     items: ['Luxury goods', 'Fashion', 'Fine dining', 'Jewellery', 'Travel', 'Watches'] },
+  { group: 'Business',               items: ['Small business', 'Entrepreneurship', 'Marketing', 'Brand management', 'Retail'] },
+  { group: 'Real Estate',            items: ['Real estate', 'Property management', 'Hotels', 'Hospitality'] },
+]
+
+const INDIA_CITIES = ['Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad', 'Gurgaon', 'Noida', 'Jaipur', 'Chandigarh', 'Surat', 'Kochi']
+
+const OPT_GOAL = {
+  OUTCOME_AWARENESS:     'REACH',
+  OUTCOME_TRAFFIC:       'LINK_CLICKS',
+  OUTCOME_ENGAGEMENT:    'POST_ENGAGEMENT',
+  OUTCOME_LEADS:         'LEAD_GENERATION',
+  OUTCOME_APP_PROMOTION: 'APP_INSTALLS',
+  OUTCOME_SALES:         'OFFSITE_CONVERSIONS',
+}
+
 // ── CHARACTER COUNT HELPER ────────────────────────────────
 
 function charMeta(text, limit) {
@@ -114,6 +135,17 @@ export default function AdTab({ showToast }) {
   const [generating, setGenerating]           = useState(false)
   const [selectedIdx, setSelectedIdx]         = useState(0)
   const [publishing, setPublishing]           = useState(false)
+  const [targetingOpen, setTargetingOpen]     = useState(false)
+  const [targeting, setTargeting]             = useState({
+    ageMin: 25, ageMax: 55,
+    genders: [],          // [] = all, [1] = men, [2] = women
+    country: 'IN',
+    cities: [],           // city names — resolve to Meta keys when token available
+    interests: [],        // interest names — resolve to Meta IDs when token available
+    budgetDaily: 1000,    // INR
+    ongoing: true,
+    startDate: new Date().toISOString().split('T')[0],
+  })
   const filmRef = useRef(null)
 
   const visibleImages = state.images.filter(img => !(state.excludedNames || []).includes(img.name))
@@ -180,58 +212,128 @@ export default function AdTab({ showToast }) {
     img.src = selectedImg.dataUrl
   }, [selectedImg, activePlacement, placement, showToast])
 
-  // ── Push to Meta Ads Manager ──────────────────────────
+  // ── Targeting helpers ─────────────────────────────────
 
-  const publishToMeta = useCallback(async (v) => {
-    const token       = state.settings.metaToken
-    const adAccountId = state.settings.adAccountId
-    const igActorId   = state.settings.igAccountId
-    if (!token)       { showToast('Add Meta token in Settings');      return }
-    if (!adAccountId) { showToast('Add Ad Account ID in Settings');   return }
-    if (!selectedImg) { showToast('Select an image first');           return }
+  const targetingSummary = () => {
+    const gender = targeting.genders.length === 1 ? (targeting.genders[0] === 1 ? 'Men' : 'Women') : 'All'
+    const loc    = targeting.cities.length
+      ? targeting.cities.slice(0, 3).join(', ') + (targeting.cities.length > 3 ? ` +${targeting.cities.length - 3}` : '')
+      : 'India'
+    const int    = targeting.interests.length
+      ? targeting.interests.slice(0, 2).join(', ') + (targeting.interests.length > 2 ? ` +${targeting.interests.length - 2}` : '')
+      : 'No interests'
+    return `${gender} · ${targeting.ageMin}–${targeting.ageMax} · ${loc} · ${int} · ₹${targeting.budgetDaily.toLocaleString()}/day`
+  }
+
+  const buildTargetingSpec = useCallback(() => {
+    const spec = {
+      age_min: targeting.ageMin,
+      age_max: targeting.ageMax,
+      publisher_platforms: ['instagram'],
+      geo_locations: { countries: [targeting.country || 'IN'] },
+    }
+    if (targeting.genders.length) spec.genders = targeting.genders
+    // Interest IDs are resolved via /search?type=adinterest once Meta token is available.
+    // Interests stored as names for now — will be wired to IDs post-verification.
+    return spec
+  }, [targeting])
+
+  // ── Full campaign push (Campaign → Ad Set → Creative → Ad) ──
+
+  const pushCampaign = useCallback(async (variant) => {
+    const token   = state.settings.metaToken
+    const acctRaw = state.settings.adAccountId
+    const igId    = state.settings.igAccountId
+    if (!token)   { showToast('Add Meta token in Settings');    return }
+    if (!acctRaw) { showToast('Add Ad Account ID in Settings'); return }
+    if (!selectedImg) { showToast('Select an image first');     return }
+    if (!variant) { showToast('Generate copy variants first');  return }
+    const acct = acctRaw.replace(/^act_/, '')
     setPublishing(true)
     try {
-      // Upload image
-      const b64       = selectedImg.dataUrl.split(',')[1]
-      const upRes     = await fetch(`https://graph.facebook.com/v20.0/act_${adAccountId}/adimages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // 1 — Campaign
+      const campRes = await fetch(`https://graph.facebook.com/v20.0/act_${acct}/campaigns`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `KSS · ${OBJECTIVES.find(o => o.id === objective)?.label} · ${new Date().toLocaleDateString()}`,
+          objective, status: 'PAUSED', special_ad_categories: [], access_token: token,
+        }),
+      })
+      const camp = await campRes.json()
+      if (camp.error) throw new Error(`Campaign: ${camp.error.message}`)
+
+      // 2 — Ad Set (with targeting + budget)
+      const adSetBody = {
+        name: `${PLACEMENTS.find(p => p.id === placement)?.label} · ${FUNNEL.find(f => f.id === funnel)?.label}`,
+        campaign_id: camp.id,
+        billing_event: 'IMPRESSIONS',
+        optimization_goal: OPT_GOAL[objective] || 'REACH',
+        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+        daily_budget: targeting.budgetDaily * 100,
+        targeting: buildTargetingSpec(),
+        status: 'PAUSED',
+        access_token: token,
+      }
+      if (!targeting.ongoing && targeting.startDate) adSetBody.start_time = targeting.startDate
+      if (igId) adSetBody.instagram_actor_id = igId
+      const adSetRes = await fetch(`https://graph.facebook.com/v20.0/act_${acct}/adsets`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adSetBody),
+      })
+      const adSet = await adSetRes.json()
+      if (adSet.error) throw new Error(`Ad Set: ${adSet.error.message}`)
+
+      // 3 — Upload image
+      const b64   = selectedImg.dataUrl.split(',')[1]
+      const upRes = await fetch(`https://graph.facebook.com/v20.0/act_${acct}/adimages`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bytes: b64, access_token: token }),
       })
       const upData    = await upRes.json()
       if (!upRes.ok)  throw new Error(upData.error?.message || 'Image upload failed')
       const imageHash = Object.values(upData.images || {})[0]?.hash
-      if (!imageHash) throw new Error('No image hash returned from Meta')
+      if (!imageHash) throw new Error('No image hash from Meta')
 
-      // Create ad creative
-      const crRes     = await fetch(`https://graph.facebook.com/v20.0/act_${adAccountId}/adcreatives`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // 4 — Ad Creative
+      const crRes = await fetch(`https://graph.facebook.com/v20.0/act_${acct}/adcreatives`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: `KSS · ${OBJECTIVES.find(o => o.id === objective)?.label} · ${new Date().toLocaleDateString()}`,
+          name: `KSS Creative · ${variant.angle || 'Variant'} · ${new Date().toLocaleDateString()}`,
           object_story_spec: {
-            ...(igActorId ? { instagram_actor_id: igActorId } : {}),
+            ...(igId ? { instagram_actor_id: igId } : {}),
             link_data: {
               image_hash: imageHash,
-              link:        `https://www.kshetejsareen.com`,
-              message:     v.primaryText,
-              name:        v.headline,
-              description: v.description,
-              call_to_action: {
-                type:  v.cta,
-                value: { link: `https://www.kshetejsareen.com` },
-              },
+              link: 'https://www.kshetejsareen.com',
+              message: variant.primaryText,
+              name: variant.headline,
+              description: variant.description,
+              call_to_action: { type: variant.cta, value: { link: 'https://www.kshetejsareen.com' } },
             },
           },
           access_token: token,
         }),
       })
-      const crData    = await crRes.json()
-      if (!crRes.ok)  throw new Error(crData.error?.message || 'Creative creation failed')
-      showToast(`Creative created in Ads Manager ✓`)
-    } catch(e) { showToast('Meta publish failed: ' + e.message) }
+      const cr = await crRes.json()
+      if (cr.error) throw new Error(`Creative: ${cr.error.message}`)
+
+      // 5 — Ad
+      const adRes = await fetch(`https://graph.facebook.com/v20.0/act_${acct}/ads`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `KSS Ad · ${variant.angle || 'Variant'} · ${new Date().toLocaleDateString()}`,
+          adset_id: adSet.id,
+          creative: { creative_id: cr.id },
+          status: 'PAUSED',
+          access_token: token,
+        }),
+      })
+      const ad = await adRes.json()
+      if (ad.error) throw new Error(`Ad: ${ad.error.message}`)
+
+      showToast('Campaign created ✓ — review in Ads Manager before activating')
+    } catch(e) { showToast('Campaign failed: ' + e.message) }
     finally { setPublishing(false) }
-  }, [state, selectedImg, objective, showToast])
+  }, [state, selectedImg, objective, placement, funnel, targeting, buildTargetingSpec, showToast])
 
   // ── Render ────────────────────────────────────────────
 
@@ -452,17 +554,134 @@ export default function AdTab({ showToast }) {
           ) : null}
         </div>
 
+        {/* ── TARGETING PANEL ── */}
+        <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
+          <button onClick={() => setTargetingOpen(o => !o)}
+            style={{ width: '100%', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+            <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', flexShrink: 0 }}>Targeting</span>
+            {!targetingOpen && (
+              <span style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {targetingSummary()}
+              </span>
+            )}
+            <span style={{ fontSize: 8, color: 'var(--mute)', marginLeft: 'auto', flexShrink: 0 }}>{targetingOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {targetingOpen && (
+            <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: 320, overflowY: 'auto' }}>
+
+              {/* Demographics row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+
+                {/* Age */}
+                <div>
+                  <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Age range</div>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input type="number" min={18} max={64} value={targeting.ageMin}
+                      onChange={e => setTargeting(t => ({ ...t, ageMin: +e.target.value }))}
+                      style={{ width: 44, fontSize: 10, textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', padding: '3px 4px' }} />
+                    <span style={{ fontSize: 9, color: 'var(--mute)' }}>–</span>
+                    <input type="number" min={19} max={65} value={targeting.ageMax}
+                      onChange={e => setTargeting(t => ({ ...t, ageMax: +e.target.value }))}
+                      style={{ width: 44, fontSize: 10, textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', padding: '3px 4px' }} />
+                  </div>
+                </div>
+
+                {/* Gender */}
+                <div>
+                  <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Gender</div>
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {[['All', []], ['Men', [1]], ['Women', [2]]].map(([label, val]) => {
+                      const active = JSON.stringify(targeting.genders) === JSON.stringify(val)
+                      return (
+                        <button key={label} onClick={() => setTargeting(t => ({ ...t, genders: val }))}
+                          style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: active ? 'var(--silver-glow)' : 'none', border: `1px solid ${active ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: active ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Budget */}
+                <div>
+                  <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 5 }}>Daily Budget</div>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>₹</span>
+                    <input type="number" min={100} step={100} value={targeting.budgetDaily}
+                      onChange={e => setTargeting(t => ({ ...t, budgetDaily: +e.target.value }))}
+                      style={{ width: 72, fontSize: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 2, color: 'var(--text)', padding: '3px 6px' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Cities */}
+              <div>
+                <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>Cities</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {INDIA_CITIES.map(city => {
+                    const active = targeting.cities.includes(city)
+                    return (
+                      <button key={city} onClick={() => setTargeting(t => ({ ...t, cities: active ? t.cities.filter(c => c !== city) : [...t.cities, city] }))}
+                        style={{ padding: '3px 8px', fontSize: 8, fontFamily: 'var(--font-mono)', background: active ? 'var(--silver-glow)' : 'none', border: `1px solid ${active ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: active ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                        {city}
+                      </button>
+                    )
+                  })}
+                </div>
+                {targeting.cities.length === 0 && (
+                  <div style={{ fontSize: 8, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginTop: 4, opacity: .6 }}>None selected — targeting all of India</div>
+                )}
+              </div>
+
+              {/* Interests */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Interests</div>
+                  <div style={{ fontSize: 7, color: 'rgba(80,140,230,.55)', fontFamily: 'var(--font-mono)' }}>IDs resolve via Meta API when token is added</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {INTEREST_GROUPS.map(grp => (
+                    <div key={grp.group}>
+                      <div style={{ fontSize: 7, color: 'var(--mute)', fontFamily: 'var(--font-mono)', marginBottom: 5, opacity: .65 }}>{grp.group}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                        {grp.items.map(name => {
+                          const active = targeting.interests.includes(name)
+                          return (
+                            <button key={name} onClick={() => setTargeting(t => ({ ...t, interests: active ? t.interests.filter(i => i !== name) : [...t.interests, name] }))}
+                              style={{ padding: '3px 8px', fontSize: 8, fontFamily: 'var(--font-mono)', background: active ? 'var(--silver-glow)' : 'none', border: `1px solid ${active ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: active ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                              {name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Token pending notice */}
+              {!state.settings.metaToken && (
+                <div style={{ fontSize: 8, color: 'rgba(220,160,0,.75)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, padding: '6px 9px', background: 'rgba(220,160,0,.05)', border: '1px solid rgba(220,160,0,.15)', borderRadius: 3 }}>
+                  Meta token verification pending. Targeting matrix is fully configured and ready — campaign push enables automatically once the token is added to Settings.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ── FOOTER ── */}
         <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 8 }}>
           <button className="plan-btn" style={{ flex: 1 }} onClick={generate} disabled={generating || !selectedImg}>
             {generating ? <><span className="spin" /> Generating variants&hellip;</> : '✦ Generate 3 Ad Variants'}
           </button>
-          {state.settings.adAccountId && variants.length > 0 && (
+          {variants.length > 0 && (
             <button className="btn btn-ghost btn-sm"
-              style={{ color: 'rgba(74,122,191,.9)', borderColor: 'rgba(74,122,191,.3)', flexShrink: 0 }}
-              onClick={() => v && publishToMeta(v)}
-              disabled={publishing || !state.settings.metaToken}>
-              {publishing ? <><span className="spin" /> Pushing&hellip;</> : '&#8593; Push to Meta'}
+              style={{ color: state.settings.metaToken ? 'rgba(74,122,191,.9)' : 'var(--mute)', borderColor: state.settings.metaToken ? 'rgba(74,122,191,.3)' : 'var(--border)', flexShrink: 0 }}
+              onClick={() => v && pushCampaign(v)}
+              disabled={publishing || !state.settings.metaToken || !state.settings.adAccountId}
+              title={!state.settings.metaToken ? 'Meta token verification pending' : 'Push full campaign to Meta Ads Manager'}>
+              {publishing ? <><span className="spin" /> Pushing&hellip;</> : !state.settings.metaToken ? '⏳ Token pending' : '↑ Push Campaign'}
             </button>
           )}
         </div>
