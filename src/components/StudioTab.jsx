@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useStore, claudeVision, claudeCall, M_OPUS, M_SONNET, M_HAIKU, exportPng, readFileAsDataUrl, resizeImage, extractBase64, PROXY } from '../store.jsx'
+import Tip from './Tip.jsx'
 
 // ── SYSTEM PROMPTS ────────────────────────────────────────
 
@@ -582,31 +583,49 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
 
         {/* Toolbar — zoom always visible */}
         <div style={{ display: 'flex', gap: 4, padding: '8px 14px', alignItems: 'center', flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
-          {['post', 'story'].map(m => (
-            <button key={m} onClick={() => { setMode(m); setZoom(0) }}
-              style={{ padding: '4px 12px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
-              {m === 'post' ? '4:5' : '9:16'}
-            </button>
-          ))}
+          {['post', 'story'].map(m => {
+            const modeTips = {
+              post:  'Post 4:5 — Design a 1080×1350px Instagram feed post. This canvas is your primary design output.',
+              story: 'Story 9:16 — Design a 1080×1920px Instagram Story. Uses the full vertical canvas.',
+            }
+            return (
+              <Tip key={m} text={modeTips[m]}>
+                <button onClick={() => { setMode(m); setZoom(0) }}
+                  style={{ padding: '4px 12px', fontSize: 10, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em', background: mode === m ? 'var(--silver-ghost)' : 'none', border: `1px solid ${mode === m ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: mode === m ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer' }}>
+                  {m === 'post' ? '4:5' : '9:16'}
+                </button>
+              </Tip>
+            )
+          })}
           <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
           <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +((z === 0 ? fitScale : z) * 0.9).toFixed(3)))}>−</button>
-            <button onClick={() => setZoom(0)} style={{ minWidth: 44, padding: '3px 6px', fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r)', cursor: 'pointer', textAlign: 'center' }} title="Click to fit (Space)">
-              {Math.round(displayScale * 100)}%
-            </button>
-            <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(3, +((z === 0 ? fitScale : z) * 1.1).toFixed(3)))}>+</button>
+            <Tip text="Zoom out. Tip: use trackpad pinch for smooth zoom.">
+              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.max(0.1, +((z === 0 ? fitScale : z) * 0.9).toFixed(3)))}>−</button>
+            </Tip>
+            <Tip text="Current zoom level. Click to reset to fit. Shortcut: Space.">
+              <button onClick={() => setZoom(0)} style={{ minWidth: 44, padding: '3px 6px', fontSize: 9, color: 'var(--silver)', fontFamily: 'var(--font-mono)', background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r)', cursor: 'pointer', textAlign: 'center' }} title="Click to fit (Space)">
+                {Math.round(displayScale * 100)}%
+              </button>
+            </Tip>
+            <Tip text="Zoom in. Tip: use trackpad pinch for smooth zoom.">
+              <button className="btn btn-ghost btn-xs" onClick={() => setZoom(z => Math.min(3, +((z === 0 ? fitScale : z) * 1.1).toFixed(3)))}>+</button>
+            </Tip>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             {currentHtml && (
               <>
-                <button className="btn btn-ghost btn-xs"
-                  style={{ color: chatOpen ? 'var(--amber)' : 'var(--text-3)', borderColor: chatOpen ? 'rgba(255,170,0,.35)' : 'var(--border)' }}
-                  onClick={() => setChatOpen(c => !c)}>
-                  Refine
-                </button>
-                <button className="btn btn-ghost btn-xs" onClick={() => navigator.clipboard.writeText(currentHtml).then(() => showToast('Copied ✓'))}>
-                  HTML
-                </button>
+                <Tip text="Design Chatbot — Describe a change in plain language and Claude will modify the current design. Try: 'make the headline larger', 'shift text to bottom', 'use a serif font', 'darken the overlay'.">
+                  <button className="btn btn-ghost btn-xs"
+                    style={{ color: chatOpen ? 'var(--amber)' : 'var(--text-3)', borderColor: chatOpen ? 'rgba(255,170,0,.35)' : 'var(--border)' }}
+                    onClick={() => setChatOpen(c => !c)}>
+                    Refine
+                  </button>
+                </Tip>
+                <Tip text="Copy HTML Source — Copies the raw HTML/CSS of the current design to clipboard. Paste into a code editor to inspect or manually modify.">
+                  <button className="btn btn-ghost btn-xs" onClick={() => navigator.clipboard.writeText(currentHtml).then(() => showToast('Copied ✓'))}>
+                    HTML
+                  </button>
+                </Tip>
               </>
             )}
           </div>
@@ -759,9 +778,11 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
                   ))}
                 </div>
 
-                <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
-                  {generatingCopy ? <><span className="spin" /> Generating…</> : '✦ Generate Copy'}
-                </button>
+                <Tip text="Generate Copy — Claude Opus analyses your image, brief, and brand voice, then writes headline variants, subheadline, tagline, and CTA. Results are auto-used in the next Generate Post/Story.">
+                  <button className="btn btn-ghost btn-sm btn-full" onClick={generateCopy} disabled={generatingCopy || !selectedImg} style={{ marginBottom: 10 }}>
+                    {generatingCopy ? <><span className="spin" /> Generating…</> : '✦ Generate Copy'}
+                  </button>
+                </Tip>
 
                 {headlineVariants.length > 1 && (
                   <div style={{ marginBottom: 10 }}>
@@ -792,11 +813,13 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
                         placeholder={ph} disabled={lockedFields[key]}
                         style={{ fontSize: 11, padding: '5px 8px', opacity: lockedFields[key] ? .5 : 1 }} />
                     </div>
-                    <button onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
-                      title={lockedFields[key] ? 'Unlock' : 'Lock'}
-                      style={{ width: 20, height: 20, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {lockedFields[key] ? '●' : '○'}
-                    </button>
+                    <Tip text="Lock this field — it will be preserved on the next Generate Copy run, even if all other fields refresh.">
+                      <button onClick={() => setLockedFields(l => ({ ...l, [key]: !l[key] }))}
+                        title={lockedFields[key] ? 'Unlock' : 'Lock'}
+                        style={{ width: 20, height: 20, marginTop: 14, flexShrink: 0, background: lockedFields[key] ? 'var(--silver-ghost)' : 'none', border: `1px solid ${lockedFields[key] ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: lockedFields[key] ? 'var(--silver)' : 'var(--text-3)', cursor: 'pointer', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {lockedFields[key] ? '●' : '○'}
+                      </button>
+                    </Tip>
                   </div>
                 ))}
 
@@ -808,8 +831,12 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
 
                 {hasCopyFilled && (
                   <div style={{ display: 'flex', gap: 5 }}>
-                    <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }); setHeadlineVariants([]) }}>Clear</button>
-                    <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
+                    <Tip text="Clear all copy fields and headline variants. The next Generate will write fresh copy from scratch.">
+                      <button className="btn btn-ghost btn-xs" onClick={() => { setCopy({ headline: '', sub: '', tagline: '', cta: '', website: '' }); setLockedFields({ headline: false, sub: false, tagline: false, cta: false }); setHeadlineVariants([]) }}>Clear</button>
+                    </Tip>
+                    <Tip text="Remove locks from all copy fields so they all refresh on the next Generate Copy.">
+                      <button className="btn btn-ghost btn-xs" onClick={() => setLockedFields({ headline: false, sub: false, tagline: false, cta: false })}>Unlock all</button>
+                    </Tip>
                   </div>
                 )}
               </div>
@@ -831,18 +858,20 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
               <div style={{ padding: '0 14px 12px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 10 }}>
                   {[
-                    ['Subject dominant',    'Subject fills the frame. Type bows to it.'],
-                    ['Negative space',      'Build around open space. Subject and text breathe.'],
-                    ['Graphic tension',     'Visual tension between image and type.'],
-                    ['Editorial stillness', 'Magazine spread that stopped time.'],
-                    ['Layered depth',       'Type in its own plane, not on top.'],
-                    ['Cinematic',           'Feels like a still from a film.'],
-                  ].map(([label, p]) => (
-                    <button key={label} onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
-                      style={{ padding: '6px 8px', textAlign: 'left', fontSize: 8, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.3 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 1 }}>{label}</div>
-                      <div style={{ fontSize: 7, opacity: .5 }}>{p}</div>
-                    </button>
+                    ['Subject dominant',    'Subject fills the frame. Type bows to it.',    'Subject Dominant — The image fills the frame and typography steps back. Type is small and precise, bowing to the photograph.'],
+                    ['Negative space',      'Build around open space. Subject and text breathe.', 'Negative Space Led — Build the layout around open areas in the image. Subject and text breathe without competing.'],
+                    ['Graphic tension',     'Visual tension between image and type.',         'Graphic Tension — Create visual tension between the image and typography. Type cuts across or challenges the composition.'],
+                    ['Editorial stillness', 'Magazine spread that stopped time.',             'Editorial Stillness — The feeling of a magazine spread that has stopped time. Minimal, considered, deliberate.'],
+                    ['Layered depth',       'Type in its own plane, not on top.',             'Layered Depth — Typography sits in its own compositional plane rather than simply on top of the image.'],
+                    ['Cinematic',           'Feels like a still from a film.',                'Cinematic — The design feels like a still from a film. Letterboxing, film grain, dramatic light.'],
+                  ].map(([label, p, tip]) => (
+                    <Tip key={label} text={tip}>
+                      <button onClick={() => setStylePrompt(stylePrompt === p ? '' : p)}
+                        style={{ padding: '6px 8px', textAlign: 'left', fontSize: 8, background: stylePrompt === p ? 'var(--silver-ghost)' : 'none', border: `1px solid ${stylePrompt === p ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: stylePrompt === p ? 'var(--silver)' : 'var(--text-2)', cursor: 'pointer', lineHeight: 1.3 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 1 }}>{label}</div>
+                        <div style={{ fontSize: 7, opacity: .5 }}>{p}</div>
+                      </button>
+                    </Tip>
                   ))}
                 </div>
 
@@ -924,22 +953,26 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
 
         {/* Generate + Export — sticky bottom */}
         <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-          <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
-            {generating ? <><span className="spin" /> {genStep || 'Generating…'}</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
-          </button>
-          {currentHtml && (
-            <button className="btn btn-ghost btn-full" disabled={exporting}
-              onClick={async () => {
-                setExporting(true)
-                try {
-                  const handle = state.settings.handle?.replace('@','') || 'KSS'
-                  await exportPng(currentHtml, canvasDims.w, canvasDims.h, `${handle}-${mode}-${Date.now()}.png`)
-                  showToast('PNG exported ✓')
-                } catch(e) { showToast('Export failed: ' + e.message) }
-                finally { setExporting(false) }
-              }}>
-              {exporting ? <><span className="spin" /> Exporting…</> : '↓ Export PNG'}
+          <Tip text="Generate Design — Two-step pipeline: (1) Claude Sonnet plans the layout as a JSON spec — shell pattern, font, size, tracking, overlay, text zone. (2) Claude Opus executes it as precise HTML/CSS. Fonts are pre-loaded so designs always render correctly.">
+            <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
+              {generating ? <><span className="spin" /> {genStep || 'Generating…'}</> : `✦ Generate ${mode === 'story' ? 'Story' : 'Post'}`}
             </button>
+          </Tip>
+          {currentHtml && (
+            <Tip text="Export PNG — Renders the design at full resolution (1080×1350 Post or 1080×1920 Story) as a downloadable PNG file using the server-side renderer.">
+              <button className="btn btn-ghost btn-full" disabled={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const handle = state.settings.handle?.replace('@','') || 'KSS'
+                    await exportPng(currentHtml, canvasDims.w, canvasDims.h, `${handle}-${mode}-${Date.now()}.png`)
+                    showToast('PNG exported ✓')
+                  } catch(e) { showToast('Export failed: ' + e.message) }
+                  finally { setExporting(false) }
+                }}>
+                {exporting ? <><span className="spin" /> Exporting…</> : '↓ Export PNG'}
+              </button>
+            </Tip>
           )}
         </div>
       </div>

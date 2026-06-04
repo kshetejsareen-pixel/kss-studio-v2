@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useStore, claudeCall, claudeCallWithImages, claudeAnalyzeLayout, claudeVision, resizeImage, extractBase64, PROXY, M_SONNET, M_HAIKU } from '../store.jsx'
 import CarouselModal from './CarouselModal.jsx'
 import ShootChecklist from './ShootChecklist.jsx'
+import Tip from './Tip.jsx'
 
 const SIZE_OPTIONS = [
   { label: '1:1',  ratio: '1:1',  w: 1080, h: 1080 },
@@ -596,12 +597,22 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
 
             {/* Format */}
             <div style={{ display: 'flex', gap: 3 }}>
-              {SIZE_OPTIONS.map(s => (
-                <button key={s.ratio} onClick={() => { setSize(s); set('postW', s.w); set('postH', s.h) }}
-                  style={{ padding: '3px 7px', fontSize: 9, fontFamily: 'var(--font-mono)', background: size.ratio === s.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${size.ratio === s.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: size.ratio === s.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
-                  {s.ratio}
-                </button>
-              ))}
+              {SIZE_OPTIONS.map(s => {
+                const sizeTips = {
+                  '1:1':  'Square 1:1 — 1080×1080px. Classic Instagram format.',
+                  '4:5':  'Portrait 4:5 — 1080×1350px. Takes up the most screen space in the feed. Recommended for maximum impact.',
+                  '9:16': 'Vertical 9:16 — 1080×1920px. Stories and Reels dimensions.',
+                  '16:9': 'Landscape 16:9 — 1080×608px. Best for cinematic shots. Takes less feed space.',
+                }
+                return (
+                  <Tip key={s.ratio} text={sizeTips[s.ratio]}>
+                    <button onClick={() => { setSize(s); set('postW', s.w); set('postH', s.h) }}
+                      style={{ padding: '3px 7px', fontSize: 9, fontFamily: 'var(--font-mono)', background: size.ratio === s.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${size.ratio === s.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: size.ratio === s.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                      {s.label}
+                    </button>
+                  </Tip>
+                )
+              })}
             </div>
 
             {/* Divider */}
@@ -615,27 +626,36 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
             </select>
 
             {/* Set */}
-            <button className="btn btn-ghost btn-sm" onClick={handleSetLayout} style={{ fontSize: 9 }}>✓ Set</button>
+            <Tip text="Set Layout — Initialises the grid with your current post count and format. Run this before using Plan with Claude or dragging images manually.">
+              <button className="btn btn-ghost btn-sm" onClick={handleSetLayout} style={{ fontSize: 9 }}>✓ Set</button>
+            </Tip>
 
             {/* Divider */}
             <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
 
             {/* Plan */}
-            <button className="btn btn-primary" onClick={handlePlanWithClaude} disabled={planning} style={{ fontSize: 9 }}>
-              {planning ? <><span className="spin" /> Planning…</> : '✦ Plan'}
-            </button>
+            <Tip text="Plan with Claude — Claude analyses your uploaded images and creates a complete Instagram grid plan: assigns images to slots, mixes singles and carousels, follows the content mix you've set, and uses any reference layout in the Director panel.">
+              <button className="btn btn-primary" onClick={handlePlanWithClaude} disabled={planning} style={{ fontSize: 9 }}>
+                {planning ? <><span className="spin" /> Planning…</> : '✦ Plan'}
+              </button>
+            </Tip>
 
             {/* Spacer */}
             <div style={{ flex: 1 }} />
 
             {/* Export/Import/Shot List */}
-            <button className="btn btn-ghost btn-xs" onClick={() => {
-              const data = state.plan.map(p => ({ ...p, imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '', slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || '') }))
-              const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'KSS-Plan.json'; a.click(); showToast('Exported')
-            }}>↓</button>
-            <button className="btn btn-ghost btn-xs" onClick={() => setShowChecklist(true)}>📋</button>
-            <button className="btn btn-ghost btn-xs" onClick={() => {
-              const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
+            <Tip text="Export Plan — Download the current plan as a JSON file. Use this to save your work and restore it in a future session.">
+              <button className="btn btn-ghost btn-xs" onClick={() => {
+                const data = state.plan.map(p => ({ ...p, imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '', slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || '') }))
+                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'KSS-Plan.json'; a.click(); showToast('Exported')
+              }}>↓</button>
+            </Tip>
+            <Tip text="Shot Checklist — Generates an AI shot list from your brief: what you still need to capture to fill the grid and tell the brand's story effectively.">
+              <button className="btn btn-ghost btn-xs" onClick={() => setShowChecklist(true)}>📋</button>
+            </Tip>
+            <Tip text="Import Plan — Load a previously exported plan JSON. Images are matched by filename so keep your image files consistent between sessions.">
+              <button className="btn btn-ghost btn-xs" onClick={() => {
+                const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
               input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader()
                 reader.onload = ev => { try {
                   const parsed = JSON.parse(ev.target.result)
@@ -655,15 +675,20 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
                   resetPlan(restored); showToast(`Loaded ✓`)
                 } catch (err) { showToast('Import failed: ' + err.message) } }; reader.readAsText(file) }; input.click()
             }}>↑</button>
+            </Tip>
 
             {/* Divider */}
             <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
 
             {/* Grid zoom */}
             <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.3, +(s - 0.1).toFixed(2)))}>−</button>
+              <Tip text="Zoom out — make grid cells smaller to see more posts at once.">
+                <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.3, +(s - 0.1).toFixed(2)))}>−</button>
+              </Tip>
               <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', minWidth: 28, textAlign: 'center' }}>{Math.round(gridScale * 100)}%</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(2.0, +(s + 0.1).toFixed(2)))}>+</button>
+              <Tip text="Zoom in — make grid cells larger for better detail.">
+                <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(2.0, +(s + 0.1).toFixed(2)))}>+</button>
+              </Tip>
             </div>
           </div>
           {allFilled && (

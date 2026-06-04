@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { useStore, claudeVision, M_OPUS } from '../store.jsx'
+import Tip from './Tip.jsx'
 
 // ── CONSTANTS ─────────────────────────────────────────────
 
@@ -449,12 +450,24 @@ export default function AdTab({ showToast }) {
 
           {/* Objective pills */}
           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-            {OBJECTIVES.map(o => (
-              <button key={o.id} onClick={() => setObjective(o.id)}
-                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: objective === o.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${objective === o.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: objective === o.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {o.label}
-              </button>
-            ))}
+            {OBJECTIVES.map(o => {
+              const objTips = {
+                OUTCOME_AWARENESS:     "Awareness — Show your studio to new people who've never heard of you. Optimises for reach and brand recall. Best paired with TOFU.",
+                OUTCOME_TRAFFIC:       "Traffic — Drive clicks to your website or portfolio. Best when you have a strong landing page ready.",
+                OUTCOME_ENGAGEMENT:    "Engagement — Get likes, comments, saves, shares. Builds social proof. Best for content that provokes a reaction or starts a conversation.",
+                OUTCOME_LEADS:         "Leads — Collect contact info via Meta's instant form. Best for 'Book a consultation' or 'Get a quote' campaigns.",
+                OUTCOME_APP_PROMOTION: "App — Drive app installs or in-app activity. Rarely used for a photography studio.",
+                OUTCOME_SALES:         "Sales — Drive purchases or conversions. Requires a Facebook Pixel on your website. Best for BOFU retargeting of warm audiences.",
+              }
+              return (
+                <Tip key={o.id} text={objTips[o.id]}>
+                  <button onClick={() => setObjective(o.id)}
+                    style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: objective === o.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${objective === o.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: objective === o.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {o.label}
+                  </button>
+                </Tip>
+              )
+            })}
           </div>
 
           {/* Divider */}
@@ -462,12 +475,22 @@ export default function AdTab({ showToast }) {
 
           {/* Placement pills */}
           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-            {PLACEMENTS.map(p => (
-              <button key={p.id} onClick={() => setPlacement(p.id)}
-                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: placement === p.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {p.label}
-              </button>
-            ))}
+            {PLACEMENTS.map(p => {
+              const placeTips = {
+                feed:   "Feed 4:5 — 1080×1350px. Takes up maximum screen space in the scroll. Best format for brand imagery and portfolio showcase.",
+                story:  "Stories 9:16 — 1080×1920px. Full-screen, high attention, disappears after 24h. Best for urgency and behind-the-scenes moments.",
+                reels:  "Reels 9:16 — 1080×1920px. Currently the highest organic reach format on Instagram. Permanent unlike Stories.",
+                square: "Square 1:1 — 1080×1080px. Classic Instagram format. Good for Facebook Feed cross-posting.",
+              }
+              return (
+                <Tip key={p.id} text={placeTips[p.id]}>
+                  <button onClick={() => setPlacement(p.id)}
+                    style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: placement === p.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {p.label}
+                  </button>
+                </Tip>
+              )
+            })}
           </div>
 
           {/* Divider */}
@@ -475,23 +498,34 @@ export default function AdTab({ showToast }) {
 
           {/* Funnel pills */}
           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-            {FUNNEL.map(f => (
-              <button key={f.id} onClick={() => setFunnel(f.id)}
-                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: funnel === f.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${funnel === f.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: funnel === f.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {f.label}
-              </button>
-            ))}
+            {FUNNEL.map(f => {
+              const funnelTips = {
+                tofu: "TOFU — Top of Funnel\nCold audience who've never heard of your studio. Copy should educate and build desire — never hard sell to a cold audience.",
+                mofu: "MOFU — Middle of Funnel\nWarm audience who've seen your content or visited your profile. Deepen the story, show proof of work, address objections.",
+                bofu: "BOFU — Bottom of Funnel\nHot retargeting audience who already know you. Cut straight to the offer. Create urgency. Direct CTA.",
+              }
+              return (
+                <Tip key={f.id} text={funnelTips[f.id]}>
+                  <button onClick={() => setFunnel(f.id)}
+                    style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: funnel === f.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${funnel === f.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: funnel === f.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {f.label}
+                  </button>
+                </Tip>
+              )
+            })}
           </div>
 
           {/* Divider */}
           <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 10px', flexShrink: 0 }} />
 
           {/* Advantage+ toggle */}
-          <button onClick={() => setAdvPlus(a => !a)}
-            title={advPlus ? 'Advantage+ ON — AI self-targets from creative signals. Click to switch to manual.' : 'Advantage+ OFF — using manual interest targeting. Click to enable AI targeting.'}
-            style={{ padding: '3px 10px', fontSize: 8, fontFamily: 'var(--font-mono)', background: advPlus ? 'rgba(100,120,255,.15)' : 'none', border: `1px solid ${advPlus ? 'rgba(100,120,255,.5)' : 'var(--border)'}`, borderRadius: 2, color: advPlus ? 'rgba(140,160,255,.95)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: advPlus ? 600 : 400 }}>
-            {advPlus ? '⚡ Adv+ ON' : 'Adv+'}
-          </button>
+          <Tip text="Advantage+ Mode — Meta's AI finds the right audience by reading your creative. Copy auto-includes client-type signals so the algorithm can self-target without manual interest lists. Often outperforms manual targeting.">
+            <button onClick={() => setAdvPlus(a => !a)}
+              title={advPlus ? 'Advantage+ ON — AI self-targets from creative signals. Click to switch to manual.' : 'Advantage+ OFF — using manual interest targeting. Click to enable AI targeting.'}
+              style={{ padding: '3px 10px', fontSize: 8, fontFamily: 'var(--font-mono)', background: advPlus ? 'rgba(100,120,255,.15)' : 'none', border: `1px solid ${advPlus ? 'rgba(100,120,255,.5)' : 'var(--border)'}`, borderRadius: 2, color: advPlus ? 'rgba(140,160,255,.95)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: advPlus ? 600 : 400 }}>
+              {advPlus ? '⚡ Adv+ ON' : 'Adv+'}
+            </button>
+          </Tip>
         </div>
 
         {/* ── VARIANT AREA ── */}
@@ -756,28 +790,36 @@ export default function AdTab({ showToast }) {
 
         {/* ── FOOTER ── */}
         <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 8 }}>
-          <button className="plan-btn" style={{ flex: 1 }} onClick={generate} disabled={generating || !selectedImg}>
-            {generating ? <><span className="spin" /> Generating variants&hellip;</> : '✦ Generate 3 Ad Variants'}
-          </button>
+          <Tip text="Generate 3 Ad Variants — Claude Opus looks at your image and brief, then writes 3 complete ad sets: Hook, Primary Text (≤125 chars), Headline (≤40 chars), Description (≤30 chars), and CTA. Each variant uses a different angle and strategy.">
+            <button className="plan-btn" style={{ flex: 1 }} onClick={generate} disabled={generating || !selectedImg}>
+              {generating ? <><span className="spin" /> Generating variants&hellip;</> : '✦ Generate 3 Ad Variants'}
+            </button>
+          </Tip>
           {variants.length > 0 && (
             <>
               {selectedImg && (
-                <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={downloadAllFormats}
-                  title="Download Feed 4:5 + Stories 9:16 + Reels 9:16 for Advantage+ placements">
-                  ↓ All Formats
-                </button>
+                <Tip text="Download All Formats — Exports Feed 4:5, Stories 9:16, and Reels 9:16 in one click. Upload all three to Meta — Advantage+ will test which placement works best for each audience segment.">
+                  <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={downloadAllFormats}
+                    title="Download Feed 4:5 + Stories 9:16 + Reels 9:16 for Advantage+ placements">
+                    ↓ All Formats
+                  </button>
+                </Tip>
               )}
-              <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowBrief(true)}
-                title="Export full campaign brief — copy/paste into Meta Ads Manager">
-                ↗ Export Brief
-              </button>
-              <button className="btn btn-ghost btn-sm"
-                style={{ color: state.settings.metaToken ? 'rgba(74,122,191,.9)' : 'var(--mute)', borderColor: state.settings.metaToken ? 'rgba(74,122,191,.3)' : 'var(--border)', flexShrink: 0 }}
-                onClick={() => v && pushCampaign(v)}
-                disabled={publishing || !state.settings.metaToken || !state.settings.adAccountId}
-                title={!state.settings.metaToken ? 'Meta token verification pending' : 'Push full campaign to Meta Ads Manager'}>
-                {publishing ? <><span className="spin" /> Pushing&hellip;</> : !state.settings.metaToken ? '⏳ Token pending' : '↑ Push Campaign'}
-              </button>
+              <Tip text="Export Campaign Brief — Opens a step-by-step guide with all your settings pre-filled. Copy and paste directly into Meta Ads Manager field by field. Includes instructions for Campaign, Ad Set targeting, and all 3 ads.">
+                <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowBrief(true)}
+                  title="Export full campaign brief — copy/paste into Meta Ads Manager">
+                  ↗ Export Brief
+                </button>
+              </Tip>
+              <Tip text="Push to Meta Ads Manager — Creates the full campaign via API: Campaign → Ad Set with targeting → Image upload → Creative → Ad. Always created as PAUSED so you can review before going live.">
+                <button className="btn btn-ghost btn-sm"
+                  style={{ color: state.settings.metaToken ? 'rgba(74,122,191,.9)' : 'var(--mute)', borderColor: state.settings.metaToken ? 'rgba(74,122,191,.3)' : 'var(--border)', flexShrink: 0 }}
+                  onClick={() => v && pushCampaign(v)}
+                  disabled={publishing || !state.settings.metaToken || !state.settings.adAccountId}
+                  title={!state.settings.metaToken ? 'Meta token verification pending' : 'Push full campaign to Meta Ads Manager'}>
+                  {publishing ? <><span className="spin" /> Pushing&hellip;</> : !state.settings.metaToken ? '⏳ Token pending' : '↑ Push Campaign'}
+                </button>
+              </Tip>
             </>
           )}
         </div>
