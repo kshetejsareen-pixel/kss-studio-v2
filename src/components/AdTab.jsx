@@ -235,11 +235,13 @@ export default function AdTab({ showToast }) {
 
   // ── Render ────────────────────────────────────────────
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 296px', height: '100%', overflow: 'hidden' }}>
+  const v = variants[selectedIdx] || null
 
-      {/* ── LEFT: IMAGE SELECTOR ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
+  return (
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+
+      {/* ── LEFT: IMAGE FILMSTRIP ── */}
+      <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
         <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
             {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
@@ -250,7 +252,7 @@ export default function AdTab({ showToast }) {
             <div style={{ fontSize: 9, color: '#2A2A2A', fontFamily: 'var(--font-mono)', padding: '12px 4px', lineHeight: 1.6 }}>Upload images to begin</div>
           ) : visibleImages.map(img => {
             const isSelected = selectedImg?.id === img.id
-            const aspect     = img.width && img.height ? img.height / img.width : 1.25
+            const aspect = img.width && img.height ? img.height / img.width : 1.25
             return (
               <div key={img.id} onClick={() => setSelectedImgId(img.id)}
                 style={{ width: '100%', aspectRatio: `1 / ${aspect.toFixed(3)}`, borderRadius: 3, overflow: 'hidden', cursor: 'pointer', outline: isSelected ? '2px solid var(--silver)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .1s', flexShrink: 0 }}>
@@ -261,224 +263,208 @@ export default function AdTab({ showToast }) {
         </div>
       </div>
 
-      {/* ── CENTER: VARIANTS ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* ── MAIN AREA ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
-        {/* Toolbar */}
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.08em' }}>
-            {OBJECTIVES.find(o => o.id === objective)?.label}
-          </span>
-          <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
-          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{activePlacement?.label}</span>
-          <span style={{ color: 'var(--border)', fontSize: 10 }}>·</span>
-          <span style={{ fontSize: 9, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{FUNNEL.find(f => f.id === funnel)?.label}</span>
-          {variants.length > 0 && (
-            <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setVariants([])}>Clear</button>
-          )}
+        {/* ── TOP BAR ── */}
+        <div style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)', padding: '0 14px', overflow: 'hidden' }}>
+
+          {/* Brief input */}
+          <input
+            className="input"
+            value={adContext}
+            onChange={e => { setAdContext(e.target.value); localStorage.setItem('kss_ad_context', e.target.value) }}
+            placeholder="Ad brief — product, offer, audience…"
+            style={{ flex: 1, fontSize: 10, height: 28, minWidth: 0, marginRight: 12, background: 'transparent', border: '1px solid var(--border)' }}
+          />
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 20, background: 'var(--border)', marginRight: 10, flexShrink: 0 }} />
+
+          {/* Objective pills */}
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {OBJECTIVES.map(o => (
+              <button key={o.id} onClick={() => setObjective(o.id)}
+                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: objective === o.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${objective === o.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: objective === o.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 10px', flexShrink: 0 }} />
+
+          {/* Placement pills */}
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {PLACEMENTS.map(p => (
+              <button key={p.id} onClick={() => setPlacement(p.id)}
+                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: placement === p.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 10px', flexShrink: 0 }} />
+
+          {/* Funnel pills */}
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {FUNNEL.map(f => (
+              <button key={f.id} onClick={() => setFunnel(f.id)}
+                style={{ padding: '3px 7px', fontSize: 8, fontFamily: 'var(--font-mono)', background: funnel === f.id ? 'var(--silver-glow)' : 'none', border: `1px solid ${funnel === f.id ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: funnel === f.id ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16, minHeight: 0 }}>
+        {/* ── VARIANT AREA ── */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+
+          {/* Variant tabs — only shown when variants exist */}
+          {variants.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              {variants.map((_, i) => (
+                <button key={i} onClick={() => setSelectedIdx(i)}
+                  style={{ width: 28, height: 28, borderRadius: 3, fontSize: 11, fontFamily: 'var(--font-mono)', background: selectedIdx === i ? 'var(--silver-glow)' : 'none', border: `1px solid ${selectedIdx === i ? 'var(--silver-border)' : 'var(--border)'}`, color: selectedIdx === i ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                  {i + 1}
+                </button>
+              ))}
+              {v && (
+                <span style={{ fontSize: 8, color: 'rgba(80,150,240,.7)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginLeft: 6 }}>
+                  {v.angle}
+                </span>
+              )}
+              <button className="btn btn-ghost btn-xs" style={{ marginLeft: 'auto' }} onClick={() => setVariants([])}>Clear</button>
+            </div>
+          )}
+
+          {/* Variant content or empty state */}
           {variants.length === 0 ? (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text2)' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text2)' }}>
               {selectedImg ? (
                 <>
-                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 180, maxWidth: '45%', objectFit: 'contain', opacity: .12, borderRadius: 4 }} />
-                  <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>Configure objective → Generate 3 variants</div>
+                  <img src={selectedImg.dataUrl} alt="" style={{ maxHeight: 160, maxWidth: '35%', objectFit: 'contain', opacity: .1, borderRadius: 4 }} />
+                  <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>Set the brief · choose objective · generate</div>
                 </>
               ) : (
                 <>
                   <div style={{ fontSize: 28, opacity: .05 }}>◻</div>
-                  <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>Select an image from the left panel</div>
+                  <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)' }}>Select an image from the filmstrip</div>
                 </>
               )}
             </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, alignItems: 'start' }}>
-              {variants.map((v, i) => {
-                const pt = charMeta(v.primaryText, 125)
-                const hl = charMeta(v.headline, 40)
-                const ds = charMeta(v.description, 30)
-                const isSel = selectedIdx === i
-                return (
-                  <div key={i} onClick={() => setSelectedIdx(i)}
-                    style={{ borderRadius: 4, border: `1px solid ${isSel ? 'var(--silver-edge)' : 'var(--border)'}`, background: isSel ? 'rgba(200,200,204,.04)' : 'var(--surface)', cursor: 'pointer', overflow: 'hidden', transition: 'border-color .12s' }}>
+          ) : v ? (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', gap: 24, alignItems: 'flex-start', minHeight: 0 }}>
 
-                    {/* Image preview at correct aspect ratio */}
-                    {selectedImg && (
-                      <div style={{ width: '100%', aspectRatio: placement === 'square' ? '1/1' : placement === 'feed' ? '4/5' : '9/16', overflow: 'hidden', maxHeight: 140, position: 'relative' }}>
-                        <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
-                        {isSel && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'var(--silver)' }} />}
-                      </div>
-                    )}
-
-                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-
-                      {/* Variant label */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 7, color: 'rgba(80,150,240,.7)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{v.angle}</span>
-                        <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>#{i + 1}</span>
-                      </div>
-
-                      {/* Hook */}
-                      <div style={{ fontSize: 11, color: 'var(--silver)', fontFamily: 'var(--font-body)', lineHeight: 1.45, fontWeight: 500, fontStyle: 'italic' }}>
-                        "{v.hook}"
-                      </div>
-
-                      {/* Fields with char counts */}
-                      {[
-                        ['Primary Text', v.primaryText, pt, 125],
-                        ['Headline',     v.headline,     hl,  40],
-                        ['Description',  v.description,  ds,  30],
-                      ].map(([label, text, meta, limit]) => (
-                        <div key={label}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                            <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>{label}</span>
-                            <span style={{ fontSize: 7, fontFamily: 'var(--font-mono)', color: meta.color }}>{meta.len}/{limit}</span>
-                          </div>
-                          <div style={{ fontSize: 10, color: meta.over ? 'rgba(220,90,90,.9)' : 'var(--text2)', fontFamily: 'var(--font-body)', lineHeight: 1.45 }}>{text}</div>
-                        </div>
-                      ))}
-
-                      {/* CTA chip */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>CTA</span>
-                        <span style={{ fontSize: 8, color: 'var(--silver)', fontFamily: 'var(--font-mono)', background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 2, padding: '2px 7px' }}>
-                          {CTA_LABELS[v.cta] || v.cta}
-                        </span>
-                      </div>
-
-                      {/* Actions */}
-                      <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-                        <button className="btn btn-ghost btn-xs" style={{ flex: 1 }}
-                          onClick={e => { e.stopPropagation(); copyVariant(v) }}>
-                          Copy text
-                        </button>
-                        <button className="btn btn-ghost btn-xs" style={{ flex: 1 }}
-                          onClick={e => { e.stopPropagation(); downloadImage() }}>
-                          ↓ {activePlacement?.w}×{activePlacement?.h}
-                        </button>
-                      </div>
-                    </div>
+              {/* LEFT: image at correct aspect ratio */}
+              {selectedImg && (
+                <div style={{ flexShrink: 0, width: 'min(360px, 40%)', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                  <div style={{ width: '100%', aspectRatio: placement === 'square' ? '1/1' : placement === 'feed' ? '4/5' : '9/16', overflow: 'hidden' }}>
+                    <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── RIGHT: CONTROLS ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-raised)', borderLeft: '1px solid var(--border)' }}>
-
-        {/* Image + brief header */}
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {selectedImg && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 3, overflow: 'hidden', border: '1px solid var(--silver-edge)', flexShrink: 0 }}>
-                <img src={selectedImg.dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 10, color: 'var(--silver)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedImg.name}</div>
-                <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{selectedImg.width}×{selectedImg.height}</div>
-              </div>
-            </div>
-          )}
-          <div>
-            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 4 }}>Ad Brief</div>
-            <textarea
-              className="textarea"
-              value={adContext}
-              onChange={e => { setAdContext(e.target.value); localStorage.setItem('kss_ad_context', e.target.value) }}
-              rows={3}
-              placeholder="Describe this ad campaign — product, offer, target audience, key message. Separate from the planning brief."
-              style={{ fontSize: 10, resize: 'none' }}
-            />
-          </div>
-        </div>
-
-        {/* Scrollable sections */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-
-          {/* Objective */}
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Objective</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-              {OBJECTIVES.map(o => (
-                <button key={o.id} onClick={() => setObjective(o.id)}
-                  style={{ padding: '7px 8px', textAlign: 'left', background: objective === o.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${objective === o.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', cursor: 'pointer', lineHeight: 1.3 }}>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: objective === o.id ? 'var(--silver)' : 'var(--text2)', fontFamily: 'var(--font-mono)' }}>{o.label}</div>
-                  <div style={{ fontSize: 7, color: 'var(--text2)', marginTop: 1 }}>{o.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Placement */}
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Placement</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-              {PLACEMENTS.map(p => (
-                <button key={p.id} onClick={() => setPlacement(p.id)}
-                  style={{ padding: '6px 8px', fontSize: 9, fontFamily: 'var(--font-mono)', background: placement === p.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${placement === p.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', color: placement === p.id ? 'var(--silver)' : 'var(--text2)', cursor: 'pointer', lineHeight: 1.3 }}>
-                  <div style={{ fontWeight: 600 }}>{p.label}</div>
-                  <div style={{ fontSize: 7, opacity: .6, marginTop: 1 }}>{p.w}×{p.h}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Funnel stage */}
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Audience Temperature</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {FUNNEL.map(f => (
-                <button key={f.id} onClick={() => setFunnel(f.id)}
-                  style={{ padding: '7px 10px', textAlign: 'left', background: funnel === f.id ? 'var(--silver-ghost)' : 'none', border: `1px solid ${funnel === f.id ? 'var(--silver-edge)' : 'var(--border)'}`, borderRadius: 'var(--r)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 9, fontWeight: 600, color: funnel === f.id ? 'var(--silver)' : 'var(--text2)', fontFamily: 'var(--font-mono)', minWidth: 36 }}>{f.label}</span>
-                  <span style={{ fontSize: 8, color: 'var(--text2)', lineHeight: 1.3 }}>{f.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Meta Publishing */}
-          <div style={{ padding: '10px 14px' }}>
-            <div style={{ fontSize: 7, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 8 }}>Meta Ads Manager</div>
-            {!state.settings.adAccountId ? (
-              <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
-                Add your <span style={{ color: 'rgba(80,140,230,.7)' }}>Ad Account ID</span> in Settings to push creatives directly to Ads Manager.
-              </div>
-            ) : variants.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)' }}>
-                  Variant #{selectedIdx + 1} · {CTA_LABELS[variants[selectedIdx]?.cta] || '—'}
                 </div>
-                <button className="btn btn-ghost btn-sm btn-full"
-                  style={{ color: 'rgba(74,122,191,.9)', borderColor: 'rgba(74,122,191,.3)' }}
-                  onClick={() => publishToMeta(variants[selectedIdx])}
-                  disabled={publishing || !state.settings.metaToken}>
-                  {publishing ? <><span className="spin" /> Pushing…</> : '↑ Push to Ads Manager'}
-                </button>
-                {!state.settings.metaToken && (
-                  <div style={{ fontSize: 8, color: 'rgba(180,80,80,.7)', fontFamily: 'var(--font-mono)' }}>Add Meta token in Settings first</div>
-                )}
-              </div>
-            ) : (
-              <div style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', lineHeight: 1.5 }}>
-                Generate variants to enable publishing.
-              </div>
-            )}
-          </div>
+              )}
 
+              {/* RIGHT: copy fields */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+
+                {/* Hook */}
+                <div style={{ fontSize: 20, color: 'var(--silver)', fontFamily: 'var(--font-body)', fontStyle: 'italic', lineHeight: 1.4 }}>
+                  &ldquo;{v.hook}&rdquo;
+                </div>
+
+                {/* Primary Text */}
+                {(() => {
+                  const pt = charMeta(v.primaryText, 125)
+                  return (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Primary Text</span>
+                        <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: pt.color }}>{pt.len}/125</span>
+                      </div>
+                      <textarea
+                        value={v.primaryText}
+                        onChange={e => setVariants(prev => prev.map((vv, j) => j === selectedIdx ? { ...vv, primaryText: e.target.value } : vv))}
+                        rows={3}
+                        style={{ width: '100%', fontSize: 11, fontFamily: 'var(--font-body)', color: pt.over ? 'rgba(220,90,90,.9)' : 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '7px 9px', resize: 'vertical', lineHeight: 1.5, outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )
+                })()}
+
+                {/* Headline */}
+                {(() => {
+                  const hl = charMeta(v.headline, 40)
+                  return (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Headline</span>
+                        <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: hl.color }}>{hl.len}/40</span>
+                      </div>
+                      <input
+                        value={v.headline}
+                        onChange={e => setVariants(prev => prev.map((vv, j) => j === selectedIdx ? { ...vv, headline: e.target.value } : vv))}
+                        style={{ width: '100%', fontSize: 11, fontFamily: 'var(--font-body)', color: hl.over ? 'rgba(220,90,90,.9)' : 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '7px 9px', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )
+                })()}
+
+                {/* Description */}
+                {(() => {
+                  const ds = charMeta(v.description, 30)
+                  return (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase' }}>Description</span>
+                        <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: ds.color }}>{ds.len}/30</span>
+                      </div>
+                      <input
+                        value={v.description}
+                        onChange={e => setVariants(prev => prev.map((vv, j) => j === selectedIdx ? { ...vv, description: e.target.value } : vv))}
+                        style={{ width: '100%', fontSize: 11, fontFamily: 'var(--font-body)', color: ds.over ? 'rgba(220,90,90,.9)' : 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '7px 9px', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  )
+                })()}
+
+                {/* CTA select */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.1em', textTransform: 'uppercase', flexShrink: 0 }}>CTA</span>
+                  <select
+                    value={v.cta}
+                    onChange={e => setVariants(prev => prev.map((vv, j) => j === selectedIdx ? { ...vv, cta: e.target.value } : vv))}
+                    style={{ fontSize: 10, fontFamily: 'var(--font-mono)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 3, padding: '5px 8px', color: 'var(--silver)', cursor: 'pointer' }}>
+                    {CTA_OPTIONS.map(cta => (
+                      <option key={cta} value={cta}>{CTA_LABELS[cta] || cta}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => copyVariant(v)}>Copy text</button>
+                  <button className="btn btn-ghost btn-sm" onClick={downloadImage}>&#8595; {activePlacement?.w}&times;{activePlacement?.h}</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        {/* Generate button */}
-        <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-          <button className="plan-btn" onClick={generate} disabled={generating || !selectedImg}>
-            {generating ? <><span className="spin" /> Generating variants…</> : '✦ Generate 3 Ad Variants'}
+        {/* ── FOOTER ── */}
+        <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 8 }}>
+          <button className="plan-btn" style={{ flex: 1 }} onClick={generate} disabled={generating || !selectedImg}>
+            {generating ? <><span className="spin" /> Generating variants&hellip;</> : '✦ Generate 3 Ad Variants'}
           </button>
+          {state.settings.adAccountId && variants.length > 0 && (
+            <button className="btn btn-ghost btn-sm"
+              style={{ color: 'rgba(74,122,191,.9)', borderColor: 'rgba(74,122,191,.3)', flexShrink: 0 }}
+              onClick={() => v && publishToMeta(v)}
+              disabled={publishing || !state.settings.metaToken}>
+              {publishing ? <><span className="spin" /> Pushing&hellip;</> : '&#8593; Push to Meta'}
+            </button>
+          )}
         </div>
       </div>
     </div>

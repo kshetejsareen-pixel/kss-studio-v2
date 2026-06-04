@@ -46,6 +46,7 @@ export default function PlanTab({ showToast, onTabChange }) {
   const [planning, setPlanning]     = useState(false)
   const [inspectIdx, setInspectIdx] = useState(null)
   const [dragOver, setDragOver]     = useState(null)
+  const [draggingCell, setDraggingCell] = useState(null)
   const [imageTab, setImageTab]     = useState('all')
   const [gridScale, setGridScale]   = useState(1)
   const [thumbScale, setThumbScale] = useState(1)
@@ -536,8 +537,18 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
       <div key={img.id}
         style={{ width: thumbPx, height: thumbPx, flexShrink: 0, borderRadius: 2, overflow: 'hidden', border: `1px solid ${isExcluded ? 'rgba(180,60,60,.6)' : img.visionDesc ? 'rgba(74,122,191,.4)' : 'var(--border)'}`, cursor: isExcluded ? 'default' : 'grab', position: 'relative', opacity: isExcluded ? 0.38 : 1, transition: 'opacity .15s, border-color .15s' }}
         draggable={!isExcluded}
-        onDragStart={isExcluded ? undefined : e => { e.dataTransfer.setData('sidebar-img-id', img.id); e.dataTransfer.setData('unassigned-img', imgIdx); e.currentTarget.style.opacity = '.5' }}
-        onDragEnd={e => e.currentTarget.style.opacity = '1'}
+        onDragStart={isExcluded ? undefined : e => {
+          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.setData('sidebar-img-id', img.id)
+          e.dataTransfer.setData('unassigned-img', String(imgIdx))
+          const ghost = document.createElement('div')
+          ghost.style.cssText = 'position:fixed;top:-200px;left:-200px;width:72px;height:72px;border-radius:5px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.55)'
+          ghost.innerHTML = `<img src="${img.dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+          document.body.appendChild(ghost)
+          e.dataTransfer.setDragImage(ghost, 36, 36)
+          requestAnimationFrame(() => document.body.removeChild(ghost))
+        }}
+        onDragEnd={() => setDragOver(null)}
         onMouseEnter={() => setHoveredThumb(img.id)}
         onMouseLeave={() => setHoveredThumb(null)}
         title={title}>
@@ -570,61 +581,70 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
 
       {/* LEFT: Controls + Grid */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden', minWidth: 0 }}>
-        <div className="card" style={{ padding: '12px 14px', flexShrink: 0 }}>
-          <div className="row gap12" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="field">
-              <div className="field-label">Posts</div>
-              <input className="input" type="number" min={1} max={60} value={postCount} onChange={e => setPostCount(parseInt(e.target.value) || 1)} style={{ width: 60, textAlign: 'center' }} />
+        <div className="card" style={{ padding: '8px 12px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Post count */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>Posts</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setPostCount(c => Math.max(1, c - 1))}>−</button>
+              <span style={{ fontSize: 11, color: 'var(--silver)', fontFamily: 'var(--font-mono)', minWidth: 20, textAlign: 'center' }}>{postCount}</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setPostCount(c => Math.min(60, c + 1))}>+</button>
             </div>
-            <div className="field flex1">
-              <div className="field-label">Mix</div>
-              <select className="select" value={mix} onChange={e => setMix(e.target.value)}>
-                <option value="mixed">Mixed</option>
-                <option value="stills">Stills only</option>
-                <option value="carousels">Carousels heavy</option>
-              </select>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+
+            {/* Format */}
+            <div style={{ display: 'flex', gap: 3 }}>
+              {SIZE_OPTIONS.map(s => (
+                <button key={s.ratio} onClick={() => { setSize(s); set('postW', s.w); set('postH', s.h) }}
+                  style={{ padding: '3px 7px', fontSize: 9, fontFamily: 'var(--font-mono)', background: size.ratio === s.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${size.ratio === s.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: size.ratio === s.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
+                  {s.ratio}
+                </button>
+              ))}
             </div>
-            <div className="field">
-              <div className="field-label">Global Format</div>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {SIZE_OPTIONS.map(s => (
-                  <button key={s.ratio} onClick={() => { setSize(s); set('postW', s.w); set('postH', s.h) }}
-                    style={{ padding: '4px 7px', fontSize: 9, fontFamily: 'var(--font-mono)', background: size.ratio === s.ratio ? 'var(--silver-glow)' : 'none', border: `1px solid ${size.ratio === s.ratio ? 'var(--silver-border)' : 'var(--border)'}`, borderRadius: 2, color: size.ratio === s.ratio ? 'var(--silver)' : 'var(--mute)', cursor: 'pointer' }}>
-                    {s.ratio}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={handleSetLayout}>✓ Set</button>
-          </div>
-          <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handlePlanWithClaude} disabled={planning}>
-              {planning ? <><span className="spin" /> Planning…</> : '✦ Plan with Claude'}
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+
+            {/* Mix */}
+            <select className="select" value={mix} onChange={e => setMix(e.target.value)} style={{ fontSize: 9, padding: '3px 6px', height: 26 }}>
+              <option value="mixed">Mixed</option>
+              <option value="stills">Stills</option>
+              <option value="carousels">Carousels</option>
+            </select>
+
+            {/* Set */}
+            <button className="btn btn-ghost btn-sm" onClick={handleSetLayout} style={{ fontSize: 9 }}>✓ Set</button>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+
+            {/* Plan */}
+            <button className="btn btn-primary" onClick={handlePlanWithClaude} disabled={planning} style={{ fontSize: 9 }}>
+              {planning ? <><span className="spin" /> Planning…</> : '✦ Plan'}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => {
+
+            {/* Spacer */}
+            <div style={{ flex: 1 }} />
+
+            {/* Export/Import/Shot List */}
+            <button className="btn btn-ghost btn-xs" onClick={() => {
               const data = state.plan.map(p => ({ ...p, imageName: p.imageIndex ? state.images[p.imageIndex - 1]?.name || '' : '', slideNames: (p.slides || []).map(idx => state.images[idx - 1]?.name || '') }))
               const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = 'KSS-Plan.json'; a.click(); showToast('Exported')
-            }}>↓ Export</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowChecklist(true)} title="Generate AI shot checklist from your brief">
-              📋 Shot List
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => {
+            }}>↓</button>
+            <button className="btn btn-ghost btn-xs" onClick={() => setShowChecklist(true)}>📋</button>
+            <button className="btn btn-ghost btn-xs" onClick={() => {
               const input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json'
               input.onchange = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader()
                 reader.onload = ev => { try {
                   const parsed = JSON.parse(ev.target.result)
-
-                  // Handle both formats: legacy array OR new session object
                   const planData = Array.isArray(parsed) ? parsed : parsed.plan
-                  if (!planData || !Array.isArray(planData)) { showToast('Invalid file — no plan data found'); return }
-
-                  // If session object, restore context + queue too
+                  if (!planData || !Array.isArray(planData)) { showToast('Invalid file'); return }
                   if (!Array.isArray(parsed)) {
                     if (parsed.globalContext) { set('globalContext', parsed.globalContext); localStorage.setItem('kss_global_context', parsed.globalContext) }
                     if (parsed.queue) set('queue', parsed.queue)
-                    if (parsed.captionNotes) set('captionNotes', parsed.captionNotes)
                   }
-
                   const nameToIdx = {}; state.images.forEach((img, i) => { nameToIdx[img.name] = i + 1 })
                   const restored = planData.map(p => { const post = { ...makeEmptyPost(), ...p }
                     if (p.imageName && nameToIdx[p.imageName]) post.imageIndex = nameToIdx[p.imageName]
@@ -632,20 +652,22 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
                     else post.imageIndex = null
                     if (p.slideNames?.length) { post.slides = p.slideNames.map(n => nameToIdx[n]).filter(Boolean); if (!post.slides.length) post.slides = post.imageIndex ? [post.imageIndex] : [] } else if (post.imageIndex) post.slides = [post.imageIndex]
                     return post })
-                  resetPlan(restored)
-                  showToast(`Session loaded — ${restored.filter(p => p.imageIndex).length} posts matched ✓`)
+                  resetPlan(restored); showToast(`Loaded ✓`)
                 } catch (err) { showToast('Import failed: ' + err.message) } }; reader.readAsText(file) }; input.click()
-            }}>↑ Import</button>
-            <div className="row" style={{ gap: 3, marginLeft: 'auto', alignItems: 'center' }}>
-              <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>Grid</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => { setGridScale(0.45); setPostCount(c => Math.max(c, 9)) }} title="9-up overview">9</button>
+            }}>↑</button>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border)' }} />
+
+            {/* Grid zoom */}
+            <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
               <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.max(0.3, +(s - 0.1).toFixed(2)))}>−</button>
               <span style={{ fontSize: 9, color: 'var(--mute)', fontFamily: 'var(--font-mono)', minWidth: 28, textAlign: 'center' }}>{Math.round(gridScale * 100)}%</span>
               <button className="btn btn-ghost btn-xs" onClick={() => setGridScale(s => Math.min(2.0, +(s + 0.1).toFixed(2)))}>+</button>
             </div>
           </div>
           {allFilled && (
-            <button className="confirm-plan-btn" style={{ marginTop: 10 }}
+            <button className="confirm-plan-btn" style={{ marginTop: 8, width: '100%' }}
               onClick={() => { resetPlan(state.plan.map(p => p.imageIndex ? { ...p, locked: true } : p)); onTabChange('captions'); showToast('Plan locked — generate captions') }}>
               ✓ Plan complete — Generate Captions →
             </button>
@@ -776,23 +798,52 @@ Be numbered, specific, and concise. This will be used as a direct assignment tem
                   const slides = p.slides?.length || 1
                   const isPanMode = panModeIdx?.postIdx === i && panModeIdx?.slideIdx === null
                   const isInspected = inspectIdx === i
-                  const borderColor = isInspected ? 'var(--silver)' : isPanMode ? 'var(--silver)' : dragOver === i ? 'var(--silver)' : 'var(--border)'
                   return (
-                    <div key={i} style={{ position: 'relative', overflow: 'hidden', borderRadius: 3, cursor: isPanMode ? 'grab' : isEmpty ? 'default' : 'pointer', background: 'var(--surface)', border: `1px solid ${borderColor}`, aspectRatio: getCellRatio(p, size), transition: 'border-color .15s' }}
+                    <div key={i}
+                      style={{
+                        position: 'relative',
+                        overflow: 'hidden',
+                        borderRadius: 3,
+                        cursor: isPanMode ? 'grab' : isEmpty ? 'default' : 'pointer',
+                        background: dragOver === i ? 'rgba(200,200,204,0.06)' : 'var(--surface)',
+                        aspectRatio: getCellRatio(p, size),
+                        outline: dragOver === i
+                          ? '2px solid var(--silver)'
+                          : isInspected
+                          ? '1px solid var(--silver-border)'
+                          : '1px solid var(--border)',
+                        outlineOffset: dragOver === i ? -2 : 0,
+                        transition: 'outline .1s, background .1s, transform .15s, opacity .15s, box-shadow .15s',
+                        transform: draggingCell === i ? 'scale(0.94)' : dragOver === i ? 'scale(1.015)' : 'scale(1)',
+                        opacity: draggingCell === i ? 0.35 : 1,
+                        boxShadow: dragOver === i ? '0 4px 24px rgba(200,200,204,.12)' : 'none',
+                        willChange: 'transform, opacity',
+                      }}
                       draggable={!isEmpty && !p.locked && !isPanMode}
-                      onDragStart={e => { e.dataTransfer.setData('plan-cell-idx', i); e.currentTarget.style.opacity = '.5' }}
-                      onDragEnd={e => e.currentTarget.style.opacity = '1'}
-                      onDragOver={e => { e.preventDefault(); setDragOver(i) }}
-                      onDragLeave={() => setDragOver(null)}
-                      onDrop={e => handleCellDrop(e, i)}
+                      onDragStart={e => {
+                        e.dataTransfer.effectAllowed = 'move'
+                        e.dataTransfer.setData('plan-cell-idx', String(i))
+                        if (img) {
+                          const ghost = document.createElement('div')
+                          ghost.style.cssText = 'position:fixed;top:-200px;left:-200px;width:80px;height:80px;border-radius:6px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.6)'
+                          ghost.innerHTML = `<img src="${img.dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block"/>`
+                          document.body.appendChild(ghost)
+                          e.dataTransfer.setDragImage(ghost, 40, 40)
+                          requestAnimationFrame(() => document.body.removeChild(ghost))
+                        }
+                        setDraggingCell(i)
+                      }}
+                      onDragEnd={() => { setDraggingCell(null); setDragOver(null) }}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOver !== i) setDragOver(i) }}
+                      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null) }}
+                      onDrop={e => { setDraggingCell(null); handleCellDrop(e, i) }}
                       onClick={() => !isEmpty && !isPanMode && setInspectIdx(i)}
                       onDoubleClick={e => !isEmpty && handleDoubleClick(e, i)}
                       onMouseDown={e => !isEmpty && startPan(e, i)}>
                       {isEmpty ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 2 }}>
-                          <div style={{ fontSize: 8, color: 'var(--mute2)', fontFamily: 'var(--font-mono)' }}>#{igNum}</div>
-                          <div style={{ fontSize: Math.round(18 * gridScale), color: 'var(--mute2)', opacity: .3, lineHeight: 1 }}>+</div>
-                          <div style={{ fontSize: 8, color: 'var(--mute2)' }}>drag image</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 3, transition: 'opacity .15s', opacity: dragOver === i ? 1 : 0.35 }}>
+                          <div style={{ fontSize: 10, color: dragOver === i ? 'var(--silver)' : 'var(--mute)', fontFamily: 'var(--font-mono)', transition: 'color .1s' }}>#{igNum}</div>
+                          <div style={{ fontSize: Math.round(22 * gridScale), color: dragOver === i ? 'var(--silver)' : 'var(--mute2)', lineHeight: 1, transition: 'color .1s, transform .15s', transform: dragOver === i ? 'scale(1.3)' : 'scale(1)' }}>+</div>
                         </div>
                       ) : (
                         <>
