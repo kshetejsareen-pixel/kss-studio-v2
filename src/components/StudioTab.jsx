@@ -525,10 +525,10 @@ Use src="[IMAGE_SRC]". Div must be exactly ${w}×${h}px. Return ONLY the HTML di
   const hasCopyFilled = !!(copy.headline || copy.sub)
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 296px', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 296px', height: '100%', overflow: 'hidden' }}>
 
       {/* ── LEFT: VERTICAL FILMSTRIP ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
         <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 8, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
             {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}

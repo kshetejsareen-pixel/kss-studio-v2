@@ -408,7 +408,7 @@ export default function AdTab({ showToast }) {
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
 
       {/* ── LEFT: IMAGE FILMSTRIP ── */}
-      <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: '#060606' }}>
+      <div style={{ width: 200, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1px solid var(--border)', background: 'var(--bg-raised)' }}>
         <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase' }}>
             {visibleImages.length} image{visibleImages.length !== 1 ? 's' : ''}
