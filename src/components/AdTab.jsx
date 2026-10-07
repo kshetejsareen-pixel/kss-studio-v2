@@ -39,7 +39,7 @@ const CTA_LABELS = {
 
 // ── SYSTEM PROMPT ─────────────────────────────────────────
 
-const AD_SYSTEM = (context, objective, placement, funnel, advPlus = false) => {
+const AD_SYSTEM = (context, objective, placement, funnel, advPlus = false, audience = '') => {
   const objStrategy = {
     OUTCOME_AWARENESS:     'Write for memorability, not clicks. Brand voice and visual recall matter most. No hard sell.',
     OUTCOME_TRAFFIC:       'Lead with value or curiosity. Make them want to know more. The CTA should feel inevitable.',
@@ -61,7 +61,9 @@ ${context ? `BRAND BRIEF:\n${context.slice(0, 600)}` : 'Luxury commercial photog
 AD PARAMETERS:
 Objective: ${objective} — ${objStrategy[objective] || ''}
 Placement: ${placement}
-Audience: ${funnelStrategy[funnel] || ''}
+Audience temperature: ${funnelStrategy[funnel] || ''}
+${audience ? `TARGET AUDIENCE: ${audience}
+Every line of copy must speak directly to this audience — their world, their problems, their language, their professional context. Do not write generically. If you know what architects care about (light, proportion, material honesty) or what interior designers care about (client presentations, mood, atmosphere), use that knowledge.` : ''}
 
 META CHARACTER LIMITS — count every character, these are hard constraints:
 - Hook: 10–15 words. The single line that stops the scroll. Opens the primary text.
@@ -77,12 +79,9 @@ LUXURY COPY RULES:
 - 3 variants must have genuinely different angles — not just synonym swaps.
 ${advPlus ? `
 ADVANTAGE+ MODE — AUDIENCE SIGNAL COPY:
-Meta's Advantage+ AI reads your copy text to determine who to show this ad to — there is no manual interest targeting. You must embed the intended client type naturally in the hook and primary text so the algorithm can self-target. Do not address the audience generically.
-Examples of strong audience signals:
-- "For interior designers who want their projects remembered..."
-- "For founders who understand that the product is only half the story..."
-- "For F&B brands where the visual is the first bite..."
-The signal must feel native to the brand voice — not a demographic tag. Each of the 3 variants should signal a different client type or intent so Advantage+ can test which segment responds.` : ''}
+Meta's Advantage+ AI reads your copy text to determine who to show this ad to — there is no manual interest targeting. You must embed the intended client type naturally in the hook and primary text so the algorithm can self-target.
+${audience ? `The target audience is: ${audience}. Embed this identity directly in the copy — e.g. "For architects who..." or use language only they would recognise.` : `Each of the 3 variants should signal a different client type (e.g. interior designers / brand founders / F&B businesses) so Advantage+ can test which segment responds.`}
+The signal must feel native to the brand voice — not a demographic tag.` : ''}
 
 Generate exactly 3 variants. Return ONLY valid JSON, no markdown:
 {
@@ -137,6 +136,7 @@ export default function AdTab({ showToast }) {
 
   const [selectedImgId, setSelectedImgId]     = useState(null)
   const [adContext, setAdContext]             = useState(() => localStorage.getItem('kss_ad_context') || '')
+  const [audience, setAudience]               = useState(() => localStorage.getItem('kss_ad_audience') || '')
   const [objective, setObjective]             = useState('OUTCOME_AWARENESS')
   const [placement, setPlacement]             = useState('feed')
   const [funnel, setFunnel]                   = useState('tofu')
@@ -171,7 +171,7 @@ export default function AdTab({ showToast }) {
     if (!selectedImg)  { showToast('Select an image first');  return }
     setGenerating(true)
     try {
-      const system = AD_SYSTEM(adContext, objective, placement, funnel, advPlus)
+      const system = AD_SYSTEM(adContext, objective, placement, funnel, advPlus, audience)
       const prompt = `Look at this image. It is the visual creative for an Instagram ${placement} ad. Generate 3 copy variants for it.`
       const raw    = await claudeVision(key, system, prompt, selectedImg.dataUrl, M_OPUS, 1600)
       const match  = raw.match(/\{[\s\S]*\}/)
@@ -185,7 +185,7 @@ export default function AdTab({ showToast }) {
       }
     } catch(e) { showToast('Generation failed: ' + e.message) }
     finally { setGenerating(false) }
-  }, [state, selectedImg, adContext, objective, placement, funnel, advPlus, showToast])
+  }, [state, selectedImg, adContext, audience, objective, placement, funnel, advPlus, showToast])
 
   // ── Copy to clipboard ─────────────────────────────────
 
@@ -526,6 +526,25 @@ export default function AdTab({ showToast }) {
               {advPlus ? '⚡ Adv+ ON' : 'Adv+'}
             </button>
           </Tip>
+        </div>
+
+        {/* ── AUDIENCE ROW ── */}
+        <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg-raised)', padding: '0 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 8, color: 'var(--text2)', fontFamily: 'var(--font-mono)', letterSpacing: '.12em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            Target Audience
+          </span>
+          <input
+            className="input"
+            value={audience}
+            onChange={e => { setAudience(e.target.value); localStorage.setItem('kss_ad_audience', e.target.value) }}
+            placeholder="Who is this ad for? e.g. Architects and interior designers, premium residential projects, Delhi NCR"
+            style={{ flex: 1, fontSize: 10, height: 32, background: 'transparent', border: 'none', outline: 'none', boxShadow: 'none', borderRadius: 0, padding: '0 4px', color: audience ? 'var(--text)' : undefined }}
+          />
+          {audience && (
+            <span style={{ fontSize: 8, color: advPlus ? 'rgba(140,160,255,.7)' : 'rgba(80,180,80,.7)', fontFamily: 'var(--font-mono)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              {advPlus ? '⚡ signals active' : '✓ in brief'}
+            </span>
+          )}
         </div>
 
         {/* ── VARIANT AREA ── */}
