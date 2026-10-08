@@ -6,3 +6,8 @@ dist/
 # Local tooling
 .claude/
 graphify-out/
+.env
+.env.*
+!.env.example
+.vercel/
+worker/wrangler.toml

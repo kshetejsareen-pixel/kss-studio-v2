@@ -1,251 +1,89 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { StoreProvider, useStore, claudeResearch, readFileAsDataUrl, getImageDimensions, getImageOrientation } from './store.jsx'
-import { useToast } from './hooks/useToast.js'
-import DriveModal from './components/DriveModal.jsx'
-import PlanTab from './components/PlanTab.jsx'
-import StudioTab from './components/StudioTab.jsx'
-import AdTab from './components/AdTab.jsx'
-import CaptionsTab from './components/CaptionsTab.jsx'
-import ScheduleTab from './components/ScheduleTab.jsx'
-import SettingsTab from './components/SettingsTab.jsx'
+// The studio shell: gates (boot error, loading, passcode, second tab), the step rail and
+// the current step. Steps are routed by the URL hash (#/plan, #/write?postId=…).
+import { Component } from 'react'
+import Icon from './components/Icon.jsx'
+import { Btn, Toasts } from './components/ui.jsx'
+import { StepRail, TopBar, NextBar, MobileNav, PasscodeScreen, LockOverlay, Loading } from './components/shell.jsx'
+import { useStore } from './store/StoreProvider.jsx'
+import { useScheduler } from './store/useScheduler.js'
+import Brief from './steps/Brief.jsx'
+import Library from './steps/Library.jsx'
+import Plan from './steps/Plan.jsx'
+import Create from './steps/Create.jsx'
+import Write from './steps/Write.jsx'
+import Review from './steps/Review.jsx'
+import Schedule from './steps/Schedule.jsx'
+import Measure from './steps/Measure.jsx'
+import Promote from './steps/Promote.jsx'
+import Settings from './steps/Settings.jsx'
 
-const TABS = [
-  { id: 'plan',     label: 'Plan' },
-  { id: 'studio',   label: 'Studio' },
-  { id: 'ad',       label: 'Ad' },
-  { id: 'captions', label: 'Captions' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'settings', label: 'Settings' },
-]
+const SCREENS = { brief: Brief, library: Library, plan: Plan, create: Create, write: Write, review: Review, schedule: Schedule, measure: Measure, promote: Promote, settings: Settings }
 
-function AppInner() {
-  const { state, set, setSettings } = useStore()
-  const [activeTab, setActiveTab] = useState('plan')
-  const [contextDraft, setContextDraft] = useState(state.globalContext)
-  const [synced, setSynced] = useState(true)
-  const [researching, setResearching] = useState(false)
-  const [showDrive, setShowDrive] = useState(false)
-  const [theme, setTheme] = useState(() => localStorage.getItem('kss_theme') || 'dark')
-  const toggleTheme = () => setTheme(t => {
-    const next = t === 'dark' ? 'light' : 'dark'
-    localStorage.setItem('kss_theme', next)
-    return next
-  })
-  const { toast, showToast } = useToast()
-  const syncTimer = useRef(null)
+export default function App() {
+  const store = useStore()
+  useScheduler(store)
+  const { ready, bootError, session, skipServer, isPrimary, route } = store
 
-  // ── Load saved state on startup ──
-  useEffect(() => {
-    try {
-      const savedSettings = localStorage.getItem('kss_settings')
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings)
-        // Merge each key individually so new fields get defaults
-        Object.entries(parsed).forEach(([k, v]) => setSettings({ [k]: v }))
-      }
-      const savedContext = localStorage.getItem('kss_global_context')
-      if (savedContext) {
-        setContextDraft(savedContext)
-        set('globalContext', savedContext)
-      }
-    } catch (e) {
-      console.warn('Failed to load saved state:', e)
-    }
-  }, []) // eslint-disable-line
-
-  // ── Context bar ──
-  const handleContextChange = (val) => {
-    setContextDraft(val)
-    setSynced(false)
-    clearTimeout(syncTimer.current)
-    syncTimer.current = setTimeout(() => {
-      set('globalContext', val)
-      localStorage.setItem('kss_global_context', val)
-      setSynced(true)
-    }, 600)
-  }
-
-  const handleResearch = async () => {
-    const val = contextDraft.trim()
-    if (!val) { showToast('Type a brand name first'); return }
-    setResearching(true)
-    try {
-      const result = await claudeResearch(state.settings.anthropicKey, val)
-      const updated = val + ' | ' + result
-      setContextDraft(updated)
-      set('globalContext', updated)
-      setSynced(true)
-      showToast('Context updated ✓')
-    } catch (e) {
-      showToast('Research failed: ' + e.message)
-    } finally {
-      setResearching(false)
-    }
-  }
-
-  // ── Image import ──
-  const handleFiles = useCallback(async (files) => {
-    const arr = Array.from(files)
-    const results = []
-    for (const file of arr) {
-      if (!file.type.startsWith('image/')) continue
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        const { w, h } = await getImageDimensions(dataUrl)
-        results.push({
-          id: 'img_' + Date.now() + Math.random(),
-          name: file.name,
-          dataUrl,
-          width: w,
-          height: h,
-          orientation: getImageOrientation(w, h),
-        })
-      } catch {}
-    }
-    if (results.length) {
-      set('images', [...state.images, ...results])
-      showToast(`${results.length} image${results.length > 1 ? 's' : ''} loaded ✓`)
-    }
-  }, [state.images, set, showToast])
-
-  return (
-    <div className="shell" data-theme={theme}>
-
-      {/* ── TOPBAR ── */}
-      <header className="topbar">
-        <div className="logo-block">
-          <div className="logo-main">KSS</div>
-          <div className="logo-sub">Kshetej Sareen Studios</div>
-        </div>
-
-        <nav className="nav-tabs">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              className={`nav-tab ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="topbar-right">
-          <button className="btn btn-ghost btn-xs" onClick={toggleTheme}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 10, padding: '2px 6px' }}>
-            {theme === 'dark' ? '◑ Light' : '◐ Dark'}
-          </button>
-          <div className={`status-dot ${state.settings.metaToken ? 'connected' : ''}`} />
-          <span style={{ fontSize: 10, color: 'var(--mute)', fontFamily: 'var(--font-mono)' }}>
-            Meta: {state.settings.metaToken ? 'on' : 'off'}
-          </span>
-        </div>
-      </header>
-
-      {/* ── MAIN ── */}
-      <div className="main-layout">
-
-        {/* Context bar */}
-        <div className="context-bar">
-          <span className="context-bar-label">Brief</span>
-          <input
-            className="context-bar-input"
-            value={contextDraft}
-            onChange={e => handleContextChange(e.target.value)}
-            placeholder="Brand name or project — e.g. RAVOH, luxury furniture, Delhi…"
-          />
-          <button className="research-btn" onClick={handleResearch} disabled={researching}>
-            {researching ? <span className="spin" /> : '✦'} Research
-          </button>
-          {synced && contextDraft && (
-            <span className="context-bar-synced">synced</span>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="main-body">
-
-          {/* Sidebar — Upload and Drive only */}
-          <aside className="sidebar" style={{ width: 80 }}>
-            <div className="sidebar-section" style={{ padding: 10 }}>
-              <label className="import-btn" style={{ flexDirection: 'column', padding: '12px 8px' }}>
-                <input type="file" multiple accept="image/*" onChange={e => handleFiles(e.target.files)} />
-                <span style={{ fontSize: 16 }}>↑</span>
-                <span style={{ fontSize: 8, marginTop: 3 }}>Upload</span>
-              </label>
-              <div style={{ height: 6 }} />
-              <button className="import-btn" style={{ flexDirection: 'column', padding: '12px 8px', width: '100%' }} onClick={() => setShowDrive(true)}>
-                <svg width="18" height="16" viewBox="0 0 87.3 78">
-                  <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                  <path d="M43.65 25L29.9 1.2C28.55.4 27 0 25.45 0c-1.55 0-3.1.4-4.5 1.2L6.6 11.15c-1.4.8-2.55 1.95-3.3 3.3L27.5 53z" fill="#00ac47"/>
-                  <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.1-.4 4.5-1.2z" fill="#2684fc"/>
-                  <path d="M73.4 14.45c-.8-1.4-1.95-2.55-3.3-3.3L55.8 1.2C54.45.4 52.9 0 51.35 0h-1.5L43.65 25l16.15 28h27.3c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
-                </svg>
-                <span style={{ fontSize: 8, marginTop: 3 }}>Drive</span>
-              </button>
-            </div>
-          </aside>
-
-          {/* Content */}
-          <main className="content">
-            <div className={`tab-panel ${activeTab === 'plan' ? 'active' : ''}`}>
-              <PlanTab showToast={showToast} onTabChange={setActiveTab} />
-            </div>
-            <div className={`tab-panel tab-panel--fill ${activeTab === 'studio' ? 'active' : ''}`}>
-              <StudioTab showToast={showToast} />
-            </div>
-            <div className={`tab-panel tab-panel--fill ${activeTab === 'ad' ? 'active' : ''}`}>
-              <AdTab showToast={showToast} />
-            </div>
-            <div className={`tab-panel ${activeTab === 'captions' ? 'active' : ''}`}>
-              <CaptionsTab showToast={showToast} />
-            </div>
-            <div className={`tab-panel ${activeTab === 'schedule' ? 'active' : ''}`}>
-              <ScheduleTab showToast={showToast} />
-            </div>
-            <div className={`tab-panel ${activeTab === 'settings' ? 'active' : ''}`}>
-              <SettingsTab showToast={showToast} />
-            </div>
-          </main>
+  if (bootError) {
+    return (
+      <div className="gate">
+        <div className="gate-card">
+          <Icon name="warning" size={24} />
+          <h2>The studio couldn’t open</h2>
+          <p>{bootError}</p>
+          <p className="field-hint">Your work is still saved in this browser. Private windows and blocked site storage stop the studio from opening.</p>
+          <Btn kind="primary" icon="refresh" onClick={() => window.location.reload()}>Try again</Btn>
         </div>
       </div>
+    )
+  }
+  if (!ready || !session.checked) return <Loading />
+  if (session.needsPasscode && !skipServer) return <PasscodeScreen />
 
-      {/* ── MOBILE BOTTOM NAV ── */}
-      <nav className="mobile-nav">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            className={`mobile-nav-btn ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      {/* ── DRIVE MODAL ── */}
-      {showDrive && (
-        <DriveModal
-          apiKey={state.settings.googleKey}
-          onImport={imgs => {
-            set('images', [...state.images, ...imgs])
-            setShowDrive(false)
-          }}
-          onClose={() => setShowDrive(false)}
-          showToast={showToast}
-        />
-      )}
-
-      {/* ── TOAST ── */}
-      <div className={`toast ${toast.show ? 'show' : ''}`}>{toast.msg}</div>
+  const Screen = SCREENS[route.step] || Brief
+  return (
+    <div className="app">
+      <StepRail />
+      <div className="main">
+        <TopBar />
+        <main className="content" id="content">
+          <StepBoundary key={route.step}>
+            <Screen />
+          </StepBoundary>
+        </main>
+        <NextBar />
+      </div>
+      <MobileNav />
+      <Toasts />
+      {!isPrimary && <LockOverlay />}
     </div>
   )
 }
 
-export default function App() {
-  return (
-    <StoreProvider>
-      <AppInner />
-    </StoreProvider>
-  )
+// One broken screen shouldn't take the whole studio down; the saved document is untouched.
+class StepBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error, info) {
+    console.error(error, info?.componentStack)
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="empty">
+        <Icon name="warning" size={26} />
+        <h3>This screen hit a problem</h3>
+        <p className="mute">{String(this.state.error?.message || this.state.error)}</p>
+        <Btn kind="ghost" icon="refresh" onClick={() => this.setState({ error: null })}>Try again</Btn>
+      </div>
+    )
+  }
 }

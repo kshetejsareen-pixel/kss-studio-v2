@@ -1,0 +1,16 @@
+# Copy to wrangler.toml, then:
+#   npx wrangler secret put ANTHROPIC_API_KEY   (optional: keeps the key out of the browser)
+#   npx wrangler secret put SHARED_SECRET       (optional: paste the same value into Settings -> Proxy secret)
+#   npx wrangler deploy
+#
+# Cloudflare Workers' free plan is enough for one person's studio.
+
+name = "kss-proxy"
+main = "kss-proxy.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Comma-separated extra origins allowed to call the proxy.
+EXTRA_ORIGINS = ""
+# Set to "off" to stop adding server-side fallbacks to Opus 5 requests.
+FALLBACKS = "on"
