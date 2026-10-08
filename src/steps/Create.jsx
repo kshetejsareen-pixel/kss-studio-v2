@@ -148,8 +148,8 @@ export default function Create() {
     patchDesign((cur) => ({ html: v.html, exportImageId: null, versions: [{ html: cur.html, at: new Date().toISOString() }, ...cur.versions.filter((x) => x !== v)].slice(0, MAX_VERSIONS) }))
   }
 
-  const clearDesign = () => {
-    if (!confirmAction(`Remove the graphic from ${label}? The photo stays.`)) return
+  const clearDesign = async () => {
+    if (!(await confirmAction(`Remove the graphic from ${label}? The photo stays.`, { ok: 'Remove graphic', danger: true }))) return
     update((d) => ({ ...d, posts: d.posts.map((p) => (p.id === post.id ? { ...p, design: null } : p)) }))
   }
 

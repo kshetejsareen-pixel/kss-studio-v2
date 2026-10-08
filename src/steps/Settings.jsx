@@ -2,7 +2,7 @@
 // profile defaults, workspaces, and the data kept in this browser.
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon.jsx'
-import { Btn, Field, Segmented, Modal, Meter, confirmAction, useRunner } from '../components/ui.jsx'
+import { Btn, Field, Segmented, Modal, Meter, ProgressBar, confirmAction, useRunner } from '../components/ui.jsx'
 import { useStore } from '../store/StoreProvider.jsx'
 import { useConnections, useStorage, formatBytes } from '../components/shell.jsx'
 import { DEFAULT_MODELS, MODEL_OPTIONS, modelLabel } from '../lib/api.js'
@@ -99,7 +99,7 @@ function SecretField({ label, hint, value, onChange, placeholder }) {
           <code>•••• {String(value).slice(-4)}</code>
           <span className="spacer" />
           <Btn size="sm" kind="ghost" onClick={() => { setText(''); setEditing(true) }}>Replace</Btn>
-          <Btn size="sm" kind="ghost" icon="trash" onClick={() => { if (confirmAction(`Remove the saved ${label.toLowerCase()}?`)) onChange('') }}>Remove</Btn>
+          <Btn size="sm" kind="ghost" icon="trash" onClick={async () => { if (await confirmAction(`Remove the saved ${label.toLowerCase()}?`, { ok: 'Remove', danger: true })) onChange('') }}>Remove</Btn>
         </div>
       </Field>
     )
@@ -303,8 +303,8 @@ function WorkspacesCard() {
     setName('')
     toast(`Switched to ${ws.name}`, { kind: 'success' })
   }
-  const remove = (w) => {
-    if (!confirmAction(`Delete the workspace “${w.name}” with all its posts and pictures? This can't be undone — make a backup first if unsure.`)) return
+  const remove = async (w) => {
+    if (!(await confirmAction(`Delete the workspace “${w.name}” with all its posts and pictures? This can't be undone — make a backup first if unsure.`, { ok: 'Delete workspace', danger: true }))) return
     deleteWorkspace(w.id)
   }
   return (
@@ -351,9 +351,13 @@ function DataCard() {
     setPersisted(ok)
     toast(ok ? 'The browser will keep this data.' : 'The browser declined. Bookmarking or installing the site usually helps.', { kind: ok ? 'success' : 'info' })
   }
+  const track = (label) => {
+    const startedAt = Date.now()
+    setProgress({ label, startedAt })
+    return (done, total) => setProgress({ label, done, total, startedAt })
+  }
   const doBackup = () => run('backup', async () => {
-    const out = await backup({ includeImages: withImages, onProgress: (done, total) => setProgress({ done, total }) })
-    setProgress(null)
+    const out = await backup({ includeImages: withImages, onProgress: track('Backing up') }).finally(() => setProgress(null))
     toast(`Backup saved — ${out.workspaces} workspace${out.workspaces > 1 ? 's' : ''}, ${out.images} pictures`, { kind: 'success' })
   })
   const pick = (e) => {
@@ -363,13 +367,12 @@ function DataCard() {
     run('inspect', async () => setPending({ file, parsed: await inspectBackup(file) }))
   }
   const doRestore = () => run('restore', async () => {
-    await restore(pending.file, pending.parsed, { onProgress: (done, total) => setProgress({ done, total }) })
-    setProgress(null)
+    await restore(pending.file, pending.parsed, { onProgress: track('Restoring') }).finally(() => setProgress(null))
     setPending(null)
     toast('Backup restored', { kind: 'success' })
   })
-  const clearOld = () => {
-    if (!confirmAction('Remove the old v2 data from this browser? Import it first if you have not — this cannot be undone.')) return
+  const clearOld = async () => {
+    if (!(await confirmAction('Remove the old v2 data from this browser? Import it first if you have not — this cannot be undone.', { ok: 'Remove v2 data', danger: true }))) return
     clearV2Data()
     setV2(false)
     toast('Old v2 data removed')
@@ -395,7 +398,7 @@ function DataCard() {
         <input ref={fileRef} type="file" accept=".kssb,application/octet-stream" hidden onChange={pick} />
       </div>
       <p className="field-hint">{meta.lastBackupAt ? `Last backup ${relativeTime(meta.lastBackupAt)}.` : 'No backup yet.'}</p>
-      {progress && <p className="status-line"><Icon name="database" size={13} /> {progress.done} of {progress.total}…</p>}
+      {progress && !pending && <ProgressBar {...progress} />}
       {v2 && (
         <div className="banner info">
           <Icon name="info" size={14} />
@@ -413,7 +416,7 @@ function DataCard() {
         >
           <p>{pending.parsed.manifest.workspaces.length} workspace{pending.parsed.manifest.workspaces.length > 1 ? 's' : ''} and {pending.parsed.manifest.blobs.length} pictures{pending.parsed.manifest.exportedAt ? `, saved ${formatIst(pending.parsed.manifest.exportedAt)}` : ''}.</p>
           <p className="field-hint warn">Workspaces with the same name and id are replaced. Others are kept. Keys and tokens are never in a backup.</p>
-          {progress && <p className="status-line">{progress.done} of {progress.total}…</p>}
+          {progress && <ProgressBar {...progress} />}
         </Modal>
       )}
     </section>

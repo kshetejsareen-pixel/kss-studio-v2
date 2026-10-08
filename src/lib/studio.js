@@ -15,6 +15,7 @@ import {
   shotListPrompt, PLAN_REFERENCE_RULES, planHardRules, PLAN_REFINE_SYSTEM, MIX_LABELS, HASHTAG_SYSTEM,
   CAPTION_SYSTEM, CAPTION_REFINE_SYSTEM, OPENERS_SYSTEM, VOICE_OPTIONS,
 } from './prompts.js'
+import { BRIEF_IDEAS_SYSTEM, COMPETITOR_SYSTEM, categoryFor } from './coach.js'
 
 const PLAN_IMAGE_LIMIT = 40
 const WHITE_RULE = /no white|don.?t use white|avoid white|without white|exclude white/i
@@ -23,22 +24,32 @@ const WHITE_RULE = /no white|don.?t use white|avoid white|without white|exclude 
 
 // Describes each photo (subject, background, light, text space...). Results arrive one at a
 // time through onResult so a long run saves as it goes.
+// onProgress(done, total, failed) fires once at the start and after every photo, failures
+// included, so the count always reaches the total.
 export async function analyseImages(ids, { signal, onResult, onProgress } = {}) {
   let done = 0
+  let failed = 0
+  onProgress?.(0, ids.length, 0)
   const out = await mapLimit(ids, 3, async (id) => {
-    const image = await visionDataUrl(id, 768)
-    const profile = await askJson({
-      tier: 'haiku',
-      system: IMAGE_ANALYSIS_SYSTEM,
-      prompt: IMAGE_ANALYSIS_PROMPT,
-      images: [image],
-      maxTokens: 500,
-      signal,
-    })
-    done += 1
-    onProgress?.(done, ids.length)
-    onResult?.(id, profile)
-    return profile
+    try {
+      const image = await visionDataUrl(id, 768)
+      const profile = await askJson({
+        tier: 'haiku',
+        system: IMAGE_ANALYSIS_SYSTEM,
+        prompt: IMAGE_ANALYSIS_PROMPT,
+        images: [image],
+        maxTokens: 500,
+        signal,
+      })
+      done += 1
+      onResult?.(id, profile)
+      return profile
+    } catch (err) {
+      if (err?.name !== 'AbortError') failed += 1
+      throw err
+    } finally {
+      if (!signal?.aborted) onProgress?.(done, ids.length, failed)
+    }
   }, { signal })
   return { done: out.filter((r) => r?.value).length, errors: out.filter((r) => r?.error).map((r) => r.error) }
 }
@@ -110,6 +121,62 @@ export async function research(brand, { withSearch = true, signal } = {}) {
     effort: 'medium',
     signal,
   })
+}
+
+// What is known so far, for the coach prompts. Short on purpose: the coach runs as you type.
+function coachFacts(brief) {
+  const cat = categoryFor(brief)
+  return [
+    brief.client && `Brand: ${brief.client}`,
+    brief.offer && `Sells: ${brief.offer}`,
+    cat && `Category guess: ${cat.label}`,
+    brief.goals?.length && `Goals: ${brief.goals.join(', ')}`,
+    brief.goal && `Goal detail: ${brief.goal}`,
+    brief.target && `Audience: ${brief.target}`,
+    brief.audience?.locations?.length && `Cities: ${brief.audience.locations.join(', ')}`,
+    brief.voice && `Voice so far: ${brief.voice}`,
+  ].filter(Boolean).join('\n')
+}
+
+// Tap-to-accept suggestions for goal, voice, do/don't, CTA and audience.
+export async function briefIdeas(brief, { signal } = {}) {
+  const res = await askJson({
+    tier: 'haiku',
+    system: BRIEF_IDEAS_SYSTEM,
+    prompt: coachFacts(brief),
+    maxTokens: 900,
+    signal,
+  })
+  const list = (x, n) => (Array.isArray(x) ? x.map((s) => String(s || '').trim()).filter(Boolean).slice(0, n) : [])
+  return {
+    goals: list(res?.goals, 4),
+    voice: list(res?.voice, 6),
+    dos: list(res?.dos, 5),
+    donts: list(res?.donts, 5),
+    cta: list(res?.cta, 5),
+    target: list(res?.target, 2),
+  }
+}
+
+// Real Instagram competitors and useful articles, found with web search.
+export async function findCompetitors(brief, { signal } = {}) {
+  if (!brief.client && !brief.offer) throw new Error('Add the brand name or what it sells first.')
+  const res = await askJson({
+    tier: 'sonnet',
+    system: COMPETITOR_SYSTEM,
+    prompt: `${coachFacts(brief)}\nAlready listed: ${brief.competitors || 'none'}`,
+    search: 4,
+    maxTokens: 2000,
+    effort: 'low',
+    signal,
+  })
+  const handles = (Array.isArray(res?.handles) ? res.handles : [])
+    .map((h) => ({ handle: `@${String(h?.handle || '').replace(/^@+/, '').trim()}`, name: String(h?.name || ''), why: String(h?.why || '') }))
+    .filter((h) => /^@[A-Za-z0-9._]{2,30}$/.test(h.handle))
+  const articles = (Array.isArray(res?.articles) ? res.articles : [])
+    .map((a) => ({ title: String(a?.title || '').trim(), url: String(a?.url || '').trim(), why: String(a?.why || '') }))
+    .filter((a) => a.title && /^https?:\/\//.test(a.url))
+  return { handles, articles }
 }
 
 export async function analyseReferenceScreenshot(imageId, { signal } = {}) {

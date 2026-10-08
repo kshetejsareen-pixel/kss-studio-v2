@@ -115,12 +115,16 @@ export function Meter({ value, tone }) {
 
 export function Modal({ title, onClose, children, footer, width = 560, className = '' }) {
   const ref = useRef(null)
+  // onClose is usually an inline arrow; keep it in a ref so a re-render doesn't re-run the
+  // effect and pull focus away from an input inside the modal.
+  const close = useRef(onClose)
+  close.current = onClose
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
+    const onKey = (e) => { if (e.key === 'Escape') close.current?.() }
     window.addEventListener('keydown', onKey)
-    ref.current?.focus()
+    if (!ref.current?.contains(document.activeElement)) ref.current?.focus()
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
   return createPortal(
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.() }}>
       <div className={`modal ${className}`} style={{ width }} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
@@ -183,9 +187,80 @@ export function Frame({ image, crop, aspect = '4:5', full = false, className = '
   )
 }
 
-export function confirmAction(message) {
+// In-app confirmation. window.confirm is silently answered "no" in embedded and some
+// locked-down browsers, which made every delete quietly do nothing.
+let showConfirm = null
+export function confirmAction(message, { ok = 'Continue', danger = false } = {}) {
   // eslint-disable-next-line no-alert
-  return window.confirm(message)
+  if (!showConfirm) return Promise.resolve(window.confirm(message))
+  return new Promise((resolve) => showConfirm({ message, ok, danger, resolve }))
+}
+
+export function ConfirmHost() {
+  const [ask, setAsk] = useState(null)
+  const okRef = useRef(null)
+  useEffect(() => {
+    showConfirm = (next) => setAsk((prev) => { prev?.resolve(false); return next })
+    return () => { showConfirm = null }
+  }, [])
+  useEffect(() => { if (ask) okRef.current?.focus() }, [ask])
+  if (!ask) return null
+  const answer = (yes) => { ask.resolve(yes); setAsk(null) }
+  return (
+    <Modal
+      title="Are you sure?"
+      width={440}
+      onClose={() => answer(false)}
+      footer={(
+        <>
+          <Btn kind="ghost" onClick={() => answer(false)}>Cancel</Btn>
+          <button type="button" ref={okRef} className={`btn ${ask.danger ? 'danger' : 'primary'}`} onClick={() => answer(true)}><span>{ask.ok}</span></button>
+        </>
+      )}
+    >
+      <p>{ask.message}</p>
+    </Modal>
+  )
+}
+
+const clock = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+}
+
+// Progress for long jobs. With a total it fills and estimates the time left; without one it
+// sweeps. The elapsed clock keeps ticking, so a slow job never looks frozen.
+export function ProgressBar({ label, done = 0, total = 0, failed = 0, startedAt, onStop, className = '' }) {
+  const [now, setNow] = useState(Date.now())
+  const [lastMove, setLastMove] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  useEffect(() => { setLastMove(Date.now()) }, [done, failed])
+  const finished = done + failed
+  const pct = total ? Math.min(100, (finished / total) * 100) : 0
+  const elapsed = startedAt ? now - startedAt : 0
+  const left = total && finished ? (elapsed / finished) * (total - finished) : null
+  const quiet = now - lastMove
+  return (
+    <div className={`progress ${className}`} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={total || undefined} aria-valuenow={total ? finished : undefined}>
+      <div className="progress-head">
+        <span className="spinner" />
+        <strong>{label}</strong>
+        {total > 0 && <span className="progress-count">{finished} of {total}</span>}
+        {failed > 0 && <span className="progress-failed">{failed} failed</span>}
+        <span className="grow" />
+        <span className="progress-time">
+          {clock(elapsed)}
+          {left !== null && finished < total ? ` · about ${clock(left)} left` : total && !finished ? ' · starting' : ''}
+        </span>
+        {onStop && <Btn size="sm" kind="ghost" icon="x" onClick={onStop}>Stop</Btn>}
+      </div>
+      <div className={`progress-track ${total ? '' : 'sweep'}`}><span style={total ? { width: `${Math.max(pct, 2)}%` } : undefined} /></div>
+      {quiet > 30000 && <p className="progress-note">Still working. The last answer came {clock(quiet)} ago; big photos or a busy model can take a while.</p>}
+    </div>
+  )
 }
 
 // One Claude job at a time per screen: `busy` names the running job, errors become toasts.

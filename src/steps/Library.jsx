@@ -1,13 +1,13 @@
 // Library: bring photos in, sort them into shelves, analyse and cull them.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../components/Icon.jsx'
-import { Btn, IconBtn, Field, Empty, Segmented, Frame, Modal, useRunner, confirmAction } from '../components/ui.jsx'
+import { Btn, IconBtn, Field, Empty, Segmented, Frame, Modal, ProgressBar, useRunner, confirmAction } from '../components/ui.jsx'
 import { DriveImport, Tile } from '../components/media.jsx'
 import { useStore } from '../store/StoreProvider.jsx'
 import { byId, usageMap, imageShelf, SHELF_LABELS, isPhoto } from '../data/model.js'
 import { analyseImages, similarImages } from '../lib/studio.js'
 import { colorFamily, COLOR_FAMILIES } from '../lib/image.js'
-import { formatBytes } from '../components/shell.jsx'
+import { formatBytes, useConnections } from '../components/shell.jsx'
 
 const SIZE_KEY = 'kss_library_size'
 const readSize = () => {
@@ -19,6 +19,7 @@ const SHELVES = ['all', 'unused', 'planned', 'posted', 'aside', 'rejected', 'ref
 export default function Library() {
   const { doc, update, addImageFiles, deleteImages, toast, go } = useStore()
   const { busy, run, cancel } = useRunner()
+  const claudeOk = useConnections().claude.tone === 'ok'
   const [shelf, setShelf] = useState('all')
   const [size, setSize] = useState(readSize)
   const [query, setQuery] = useState('')
@@ -32,7 +33,7 @@ export default function Library() {
   const [drive, setDrive] = useState(false)
   const [cull, setCull] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [progress, setProgress] = useState('')
+  const [progress, setProgress] = useState(null)
   const lastClick = useRef(null)
   const fileRef = useRef(null)
 
@@ -83,12 +84,13 @@ export default function Library() {
   // ---- Import ----
   const importFiles = async (files) => {
     if (!files?.length) return
-    setProgress('Preparing…')
+    const startedAt = Date.now()
+    setProgress({ label: 'Importing photos', done: 0, total: files.length, startedAt })
     await run('import', (signal) => addImageFiles(files, {}, {
       signal,
-      onProgress: (d, n) => setProgress(`Importing ${d} of ${n}`),
+      onProgress: (done, total, failed) => setProgress({ label: 'Importing photos', done, total, failed, startedAt }),
     }))
-    setProgress('')
+    setProgress(null)
   }
   const onDrop = (e) => {
     e.preventDefault()
@@ -149,7 +151,7 @@ export default function Library() {
     const ids = targets
     const used = ids.filter((id) => usage.get(id)?.length)
     const msg = `Delete ${ids.length} photo${ids.length === 1 ? '' : 's'}?${used.length ? ` ${used.length} ${used.length === 1 ? 'is' : 'are'} used in posts and will be removed from them.` : ''} Drive files won't be imported again.`
-    if (!confirmAction(msg)) return
+    if (!(await confirmAction(msg, { ok: ids.length === 1 ? 'Delete photo' : `Delete ${ids.length} photos`, danger: true }))) return
     await deleteImages(ids)
     setSelected([])
     if (ids.includes(focus)) setFocus(null)
@@ -162,15 +164,22 @@ export default function Library() {
       toast('Nothing to analyse here.', { kind: 'info' })
       return
     }
+    // Without Claude every photo fails at once; say why instead of "0 analysed · 49 failed".
+    if (!claudeOk) {
+      toast('Claude isn’t connected, so photos can’t be analysed yet.', { kind: 'error', action: { label: 'Open Settings', fn: () => go('settings') } })
+      return
+    }
+    const startedAt = Date.now()
+    setProgress({ label: 'Analysing photos with Claude', done: 0, total: todo.length, startedAt })
     const res = await run('analyse', (signal) => analyseImages(todo, {
       signal,
-      onProgress: (d, n) => setProgress(`Analysing ${d} of ${n}`),
+      onProgress: (done, total, failed) => setProgress({ label: 'Analysing photos with Claude', done, total, failed, startedAt }),
       onResult: (id, profile) => {
         const at = new Date().toISOString()
         update((d) => ({ ...d, images: d.images.map((i) => (i.id === id ? { ...i, profile, analysedAt: at } : i)) }))
       },
     }))
-    setProgress('')
+    setProgress(null)
     if (res) toast(`${res.done} analysed${res.errors.length ? ` · ${res.errors.length} failed` : ''}`, { kind: res.errors.length ? 'info' : 'success' })
   }
   const unanalysed = doc.images.filter((i) => isPhoto(i) && !i.analysedAt).map((i) => i.id)
@@ -193,7 +202,7 @@ export default function Library() {
         >
           Drop photos anywhere on this screen. Everything stays in this browser; nothing is uploaded until you publish.
         </Empty>
-        {progress && <p className="status-line center"><Icon name="upload" size={13} /> {progress}</p>}
+        {progress && <ProgressBar {...progress} onStop={cancel} className="library-progress" />}
         <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { importFiles(e.target.files); e.target.value = '' }} />
         {drive && <DriveImport onClose={() => setDrive(false)} />}
       </div>
@@ -212,17 +221,16 @@ export default function Library() {
           <Btn kind="primary" icon="upload" onClick={() => fileRef.current?.click()} busy={busy === 'import'}>Upload</Btn>
           <Btn kind="ghost" icon="drive" onClick={() => setDrive(true)}>Drive</Btn>
           <span className="toolbar-sep" />
-          {busy === 'analyse'
-            ? <Btn kind="ghost" icon="x" onClick={cancel}>Stop analysing</Btn>
-            : <Btn kind="ghost" icon="sparkle" onClick={() => analyse(unanalysed)} disabled={!unanalysed.length} tip="Claude describes subject, light, mood and where text fits — used by Plan and Create.">Analyse new ({unanalysed.length})</Btn>}
+          <Btn kind="ghost" icon="sparkle" onClick={() => analyse(unanalysed)} busy={busy === 'analyse'} disabled={!unanalysed.length || !!busy} tip="Claude describes subject, light, mood and where text fits — used by Plan and Create.">Analyse new ({unanalysed.length})</Btn>
           <Btn kind="ghost" icon="eye" onClick={() => setCull(true)} disabled={!list.length} tip="Full-screen review: K keep, M maybe, X reject.">Cull</Btn>
           <span className="grow" />
-          {progress && <span className="status-line"><span className="spinner" /> {progress}</span>}
           <label className="size-slider">
             <Icon name="grid" size={13} />
             <input type="range" min="96" max="240" step="8" value={size} onChange={(e) => setSize(Number(e.target.value))} aria-label="Thumbnail size" />
           </label>
         </div>
+
+        {progress && <ProgressBar {...progress} onStop={cancel} />}
 
         <div className="shelf-tabs" role="tablist">
           {SHELVES.filter((s) => s === 'all' || counts[s]).map((s) => (

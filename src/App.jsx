@@ -2,7 +2,7 @@
 // the current step. Steps are routed by the URL hash (#/plan, #/write?postId=…).
 import { Component } from 'react'
 import Icon from './components/Icon.jsx'
-import { Btn, Toasts } from './components/ui.jsx'
+import { Btn, Toasts, ConfirmHost } from './components/ui.jsx'
 import { StepRail, TopBar, NextBar, MobileNav, PasscodeScreen, LockOverlay, Loading } from './components/shell.jsx'
 import { useStore } from './store/StoreProvider.jsx'
 import { useScheduler } from './store/useScheduler.js'
@@ -55,6 +55,7 @@ export default function App() {
       </div>
       <MobileNav />
       <Toasts />
+      <ConfirmHost />
       {!isPrimary && <LockOverlay />}
     </div>
   )

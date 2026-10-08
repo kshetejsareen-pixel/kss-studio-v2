@@ -137,7 +137,7 @@ export default function Plan() {
     toast(message, { kind: 'success', duration: 8000, action: { label: 'Undo', fn: () => { setPosts(() => before); toast('Swap undone', { kind: 'info' }) } } })
   }
 
-  const setSlotCount = (target) => {
+  const setSlotCount = async (target) => {
     const n = Math.max(1, Math.min(60, target))
     if (n > openCount) {
       setPosts((ps) => [...blankPosts(n - openCount), ...ps])
@@ -155,7 +155,7 @@ export default function Plan() {
         toast('Locked posts stay — unlock some to remove more slots.', { kind: 'error' })
         return
       }
-      if (!confirmAction(`Reducing to ${n} slots will remove ${filled.length} filled posts. Continue?`)) return
+      if (!(await confirmAction(`Reducing to ${n} slots will remove ${filled.length} filled posts. Continue?`, { ok: 'Remove posts', danger: true }))) return
       filled.forEach((p) => removeIds.add(p.id))
     }
     const before = snapshot()

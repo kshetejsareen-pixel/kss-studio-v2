@@ -76,7 +76,7 @@ export default function Promote() {
 
   const push = async () => {
     const n = boost ? 1 : draft.variants.length
-    if (!confirmAction(`Create ${n} ad${n > 1 ? 's' : ''} in Ads Manager? Everything is created PAUSED — nothing spends until you switch it on there.`)) return
+    if (!(await confirmAction(`Create ${n} ad${n > 1 ? 's' : ''} in Ads Manager? Everything is created PAUSED — nothing spends until you switch it on there.`, { ok: 'Create paused ads' }))) return
     const res = await run('push', (signal) => pushCampaign({
       draft, variants: draft.variants, imageId: draft.imageId, mediaId: draft.boostPostId, crop: draft.crop, settings, onStep: setStep, signal,
     }))

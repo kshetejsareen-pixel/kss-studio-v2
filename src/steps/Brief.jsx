@@ -9,6 +9,7 @@ import { briefCompleteness } from '../lib/brief.js'
 import { draftThemes, research, analyseReferenceScreenshot, analyseLayoutUrl, shotList } from '../lib/studio.js'
 import { INDIA_CITIES, INTEREST_GROUPS, SHOTLIST_SECTIONS } from '../lib/prompts.js'
 import { uid } from '../lib/ids.js'
+import { useBriefIdeas, Suggest, IdeasStatus, GoalPicker, OfferPicker, VoicePairs, AgeBands, CompetitorFinder, Interview } from './BriefCoach.jsx'
 
 const GENDERS = ['Women', 'Men', 'All genders']
 const now = () => new Date().toISOString()
@@ -19,23 +20,58 @@ export default function Brief() {
   const setBrief = (patch) => update((d) => ({ ...d, brief: { ...d.brief, ...(typeof patch === 'function' ? patch(d.brief) : patch), updatedAt: now() } }))
   const setAudience = (patch) => setBrief((br) => ({ audience: { ...br.audience, ...patch } }))
   const { score, missing } = briefCompleteness(b)
+  const coach = useBriefIdeas()
+  const [interview, setInterview] = useState(false)
 
   return (
     <div className="step-split">
       <div className="step-main">
+        <section className="card coach-banner">
+          <div>
+            <h2>{score < 50 ? 'Not sure where to start?' : score < 100 ? 'A few gaps left' : 'Brief complete'}</h2>
+            <p className="field-hint">{score < 100 ? 'Answer one quick question at a time. Every answer has ideas you can tap, and the brief fills itself as you go.' : 'Run the interview again any time to rethink an answer.'}</p>
+          </div>
+          <Btn kind={score < 100 ? 'primary' : 'ghost'} icon="sparkle" onClick={() => setInterview(true)}>{score === 0 ? 'Start the interview' : score < 100 ? 'Continue the interview' : 'Interview me again'}</Btn>
+        </section>
+        {interview && <Interview coach={coach} onClose={() => setInterview(false)} />}
+
         <section className="card" id="brief-basics">
           <header className="card-head">
             <h2><span className="sec-num">1</span>The client</h2>
+            <IdeasStatus coach={coach} />
           </header>
           <div className="form-grid">
             <Field label="Client or brand"><input value={b.client} onChange={(e) => setBrief({ client: e.target.value })} placeholder="e.g. Aman Hotels" /></Field>
-            <Field label="What they sell"><input value={b.offer} onChange={(e) => setBrief({ offer: e.target.value })} placeholder="Product, service or experience" /></Field>
-            <Field label="Goal for this grid" className="span2"><input value={b.goal} onChange={(e) => setBrief({ goal: e.target.value })} placeholder="e.g. Book more pre-wedding shoots from Delhi NCR" /></Field>
-            <Field label="Voice" hint="How the brand sounds — three words is enough." className="span2"><input value={b.voice} onChange={(e) => setBrief({ voice: e.target.value })} placeholder="Quiet, assured, crafted" /></Field>
-            <Field label="Do"><textarea rows={2} value={b.dos} onChange={(e) => setBrief({ dos: e.target.value })} /></Field>
-            <Field label="Don’t"><textarea rows={2} value={b.donts} onChange={(e) => setBrief({ donts: e.target.value })} /></Field>
-            <Field label="Call to action"><input value={b.cta} onChange={(e) => setBrief({ cta: e.target.value })} placeholder="DM to book · link in bio" /></Field>
-            <Field label="Competitors or references"><input value={b.competitors} onChange={(e) => setBrief({ competitors: e.target.value })} placeholder="@handles you admire or compete with" /></Field>
+            <Field label="What do they sell?" group>
+              <input value={b.offer} onChange={(e) => setBrief({ offer: e.target.value })} placeholder={coach.ideas.category ? `e.g. ${coach.ideas.category.offer}` : 'Product, service or experience'} aria-label="What they sell" />
+              <OfferPicker brief={b} setBrief={setBrief} />
+            </Field>
+            <Field label="What should Instagram do for the business?" hint="Pick as many as fit. Plans and captions are steered toward these." className="span2" group>
+              <GoalPicker brief={b} setBrief={setBrief} ideas={coach.ideas} />
+            </Field>
+            <Field label="How should the brand sound?" className="span2" group>
+              <input value={b.voice} onChange={(e) => setBrief({ voice: e.target.value })} placeholder="Three words is enough, e.g. Quiet, assured, crafted" aria-label="Voice" />
+              <Suggest field="voice" value={b.voice} onChange={(voice) => setBrief({ voice })} items={coach.ideas.voice} />
+              <details className="voice-game">
+                <summary className="link-btn small-text">Still unsure? Play this or that</summary>
+                <VoicePairs brief={b} setBrief={setBrief} />
+              </details>
+            </Field>
+            <Field label="What should every post show?" group>
+              <textarea rows={3} value={b.dos} onChange={(e) => setBrief({ dos: e.target.value })} placeholder="One rule per line" aria-label="Do" />
+              <Suggest field="dos" value={b.dos} onChange={(dos) => setBrief({ dos })} items={coach.ideas.dos} />
+            </Field>
+            <Field label="What should never appear?" group>
+              <textarea rows={3} value={b.donts} onChange={(e) => setBrief({ donts: e.target.value })} placeholder="One rule per line" aria-label="Don’t" />
+              <Suggest field="donts" value={b.donts} onChange={(donts) => setBrief({ donts })} items={coach.ideas.donts} />
+            </Field>
+            <Field label="After seeing a post, what should people do?" hint="Ends every caption. Tap to add; several are rotated." className="span2" group>
+              <input value={b.cta} onChange={(e) => setBrief({ cta: e.target.value })} placeholder="e.g. DM to book · link in bio" aria-label="Call to action" />
+              <Suggest field="cta" value={b.cta} onChange={(cta) => setBrief({ cta })} items={coach.ideas.cta} />
+            </Field>
+            <Field label="Who do you watch on Instagram?" hint="Rivals or brands you admire. Claude studies them when planning." className="span2" group>
+              <CompetitorFinder brief={b} setBrief={setBrief} coach={coach} />
+            </Field>
           </div>
         </section>
 
@@ -45,13 +81,17 @@ export default function Brief() {
             <span className="field-hint">Used by captions, plans and Promote targeting.</span>
           </header>
           <div className="form-grid">
-            <Field label="Who they are" className="span2"><textarea rows={2} value={b.target} onChange={(e) => setBrief({ target: e.target.value })} placeholder="e.g. Founders of boutique hotels who care how their space is seen" /></Field>
+            <Field label="Who buys?" className="span2" group>
+              <textarea rows={2} value={b.target} onChange={(e) => setBrief({ target: e.target.value })} placeholder="e.g. Founders of boutique hotels who care how their space is seen" aria-label="Who they are" />
+              <Suggest field="target" value={b.target} onChange={(target) => setBrief({ target })} items={coach.ideas.target} label="Or start from" />
+            </Field>
             <Field label="Age" group>
               <div className="row">
                 <input type="number" min={13} max={65} value={b.audience.ageMin} onChange={(e) => setAudience({ ageMin: Number(e.target.value) || 18 })} aria-label="Minimum age" />
                 <span className="mute">to</span>
                 <input type="number" min={13} max={65} value={b.audience.ageMax} onChange={(e) => setAudience({ ageMax: Number(e.target.value) || 65 })} aria-label="Maximum age" />
               </div>
+              <AgeBands audience={b.audience} onChange={setAudience} />
             </Field>
             <Field label="Gender" group><Chips options={GENDERS} value={b.audience.genders} onChange={(genders) => setAudience({ genders })} /></Field>
             <Field label="Cities" className="span2" group><Chips options={INDIA_CITIES} value={b.audience.locations} onChange={(locations) => setAudience({ locations })} /></Field>
@@ -202,8 +242,8 @@ function ThemeKits() {
     setKits((ks) => [...ks, k])
     setOpen(k.id)
   }
-  const remove = (id) => {
-    if (!confirmAction('Delete this theme? Posts and photos using it keep their content but lose the tag.')) return
+  const remove = async (id) => {
+    if (!(await confirmAction('Delete this theme? Posts and photos using it keep their content but lose the tag.', { ok: 'Delete theme', danger: true }))) return
     update((d) => ({
       ...d,
       themes: d.themes.filter((k) => k.id !== id),
@@ -371,8 +411,8 @@ function Versions() {
     }))
     toast(`Saved as version ${doc.brief.version}. Captions written before now will be flagged in Review.`, { kind: 'success' })
   }
-  const restore = (v) => {
-    if (!confirmAction(`Restore version ${v.version}? The current brief is saved as a version first.`)) return
+  const restore = async (v) => {
+    if (!(await confirmAction(`Restore version ${v.version}? The current brief is saved as a version first.`, { ok: 'Restore' }))) return
     update((d) => ({
       ...d,
       briefVersions: [{ version: d.brief.version, brief: d.brief, at: now() }, ...d.briefVersions].slice(0, 10),

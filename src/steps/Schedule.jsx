@@ -106,7 +106,7 @@ export default function Schedule() {
 
   const publish = async (post) => {
     const label = labels.get(post.id)
-    if (!confirmAction(`Publish ${label} to Instagram now? It will be public straight away.`)) return
+    if (!(await confirmAction(`Publish ${label} to Instagram now? It will be public straight away.`, { ok: 'Publish now' }))) return
     setSteps((s) => ({ ...s, [post.id]: 'Starting…' }))
     await publishNow(store, post.id, { onStep: (text) => setSteps((s) => ({ ...s, [post.id]: text })) })
     setSteps((s) => { const { [post.id]: _, ...rest } = s; return rest })

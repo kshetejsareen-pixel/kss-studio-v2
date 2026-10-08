@@ -1,7 +1,7 @@
 // Review: every filled post with its pre-flight checks, approval, and the client portal.
 import { useMemo, useState } from 'react'
 import Icon from '../components/Icon.jsx'
-import { Btn, Empty, Modal, Frame, useRunner } from '../components/ui.jsx'
+import { Btn, Empty, Modal, Frame, ProgressBar, useRunner } from '../components/ui.jsx'
 import { CarouselModal } from '../components/media.jsx'
 import { useStore } from '../store/StoreProvider.jsx'
 import {
@@ -154,9 +154,11 @@ function PortalModal({ onClose }) {
   const stats = portalStats(doc)
 
   const download = async () => {
+    const startedAt = Date.now()
+    setProgress({ label: 'Preparing images', startedAt })
     const html = await run('portal', (signal) => buildPortal(doc, {
       handle: settings.handle,
-      onProgress: (done, total) => setProgress({ done, total }),
+      onProgress: (done, total) => setProgress({ label: 'Preparing images', done, total, startedAt }),
       signal,
     }))
     setProgress(null)
@@ -178,7 +180,7 @@ function PortalModal({ onClose }) {
         <div className="stat"><span className="big-num">{stats.approved}</span><span className="label">Approved</span></div>
       </div>
       <p className="field-hint">One self-contained HTML file with every post, its slides and caption. Share the HTML file via email, WhatsApp, or Dropbox — no login needed.</p>
-      {progress && <p className="status-line"><Icon name="image" size={13} /> Preparing images {progress.done} of {progress.total}…</p>}
+      {progress && <ProgressBar {...progress} />}
     </Modal>
   )
 }

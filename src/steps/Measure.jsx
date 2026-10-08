@@ -3,7 +3,7 @@
 // the next plan, and read A/B test results.
 import { useMemo, useState } from 'react'
 import Icon from '../components/Icon.jsx'
-import { Btn, IconBtn, Empty, Segmented, Frame, useRunner, confirmAction } from '../components/ui.jsx'
+import { Btn, IconBtn, Empty, Segmented, Frame, ProgressBar, useRunner, confirmAction } from '../components/ui.jsx'
 import { useStore } from '../store/StoreProvider.jsx'
 import { useConnections } from '../components/shell.jsx'
 import { byId, formatLabel, postLabel } from '../data/model.js'
@@ -36,7 +36,9 @@ export default function Measure() {
   const info = metricInfo(metric)
 
   const sync = async (force = false) => {
-    const res = await run('sync', (signal) => syncInsights(getDoc(), settings, { signal, force, onProgress: (done, total) => setProgress({ done, total }) }))
+    const startedAt = Date.now()
+    setProgress({ label: 'Fetching insights from Instagram', startedAt })
+    const res = await run('sync', (signal) => syncInsights(getDoc(), settings, { signal, force, onProgress: (done, total) => setProgress({ label: 'Fetching insights from Instagram', done, total, startedAt }) }))
     setProgress(null)
     if (!res) return
     update((d) => applyInsights(d, res))
@@ -65,8 +67,8 @@ export default function Measure() {
     toast('Added to the plan direction notes', { kind: 'success', action: { label: 'Open Plan', fn: () => go('plan') } })
   }
 
-  const removeTest = (id) => {
-    if (!confirmAction('Delete this test? The posts stay in the plan.')) return
+  const removeTest = async (id) => {
+    if (!(await confirmAction('Delete this test? The posts stay in the plan.', { ok: 'Delete test', danger: true }))) return
     update((d) => ({ ...d, tests: d.tests.filter((t) => t.id !== id) }))
   }
 
@@ -93,12 +95,12 @@ export default function Measure() {
         {busy === 'sync'
           ? <Btn kind="ghost" onClick={cancel}>Cancel</Btn>
           : <Btn kind="primary" icon="refresh" disabled={!connected || !!busy} onClick={() => sync(false)} tip="Fetch the latest numbers from Instagram">Sync insights</Btn>}
-        {progress && <span className="status-line">Fetching {progress.done} of {progress.total}…</span>}
         {!progress && doc.feed.fetchedAt && <span className="mute">Synced {relativeTime(doc.feed.fetchedAt)}</span>}
         <span className="spacer" />
         <span className="label">Judge by</span>
         <Segmented value={metric} onChange={setMetric} size="sm" options={RANK_METRICS.map((k) => [k, metricInfo(k).label, metricInfo(k).desc])} />
       </div>
+      {progress && <ProgressBar {...progress} />}
 
       {!rows.length ? (
         <Empty icon="chart" title="No published posts yet" action={connected ? <Btn kind="primary" icon="refresh" busy={busy === 'sync'} onClick={() => sync(false)}>Import my feed</Btn> : null}>

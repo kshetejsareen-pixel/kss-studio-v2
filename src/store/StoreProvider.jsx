@@ -387,11 +387,19 @@ export function StoreProvider({ children }) {
       return null
     }
     let done = 0
+    let failed = 0
+    onProgress?.(0, list.length, 0)
     const settled = await mapLimit(list, 3, async (file) => {
-      const out = await processFile(file, extra)
-      done++
-      onProgress?.(done, list.length)
-      return out
+      try {
+        const out = await processFile(file, extra)
+        done++
+        return out
+      } catch (err) {
+        failed++
+        throw err
+      } finally {
+        if (!signal?.aborted) onProgress?.(done, list.length, failed)
+      }
     }, { signal })
     const entries = settled.filter((r) => r.value).map((r) => r.value)
     const errors = settled.map((r, i) => (r.error ? `${list[i].name}: ${r.error.message}` : null)).filter(Boolean)
@@ -421,7 +429,8 @@ export function StoreProvider({ children }) {
         posts: d.posts.map((p) => {
           const slides = p.slides.filter((s) => !gone.has(s.imageId))
           const design = p.design && gone.has(p.design.exportImageId) ? { ...p.design, exportImageId: null } : p.design
-          return slides.length === p.slides.length && design === p.design ? p : { ...p, slides, design }
+          if (slides.length === p.slides.length && design === p.design) return p
+          return { ...p, slides, design, format: p.format === 'carousel' && slides.length < 2 ? 'single' : p.format }
         }),
       }
     })

@@ -28,13 +28,15 @@ export function briefContext(doc, { research = true, learnings = true, themeId =
   const out = [
     line('CLIENT', b.client),
     line('OFFER', b.offer),
-    line('GOAL', b.goal),
+    line('GOAL', [(b.goals || []).join('; '), b.goal].filter(Boolean).join(' — ')),
     line('AUDIENCE', [b.target, audienceText(b.audience)].filter(Boolean).join(' — ')),
     line('VOICE', b.voice),
     line('PILLARS', pillarsText(b.pillars)),
     line('DO', b.dos),
     line("DON'T", b.donts),
     line('CTA', b.cta),
+    line('COMPETITORS AND BRANDS TO WATCH', b.competitors),
+    line('READING', (b.reading || []).map((r) => r.title + (r.note ? ` (${r.note})` : '')).join('; ')),
   ]
   const kit = themeId ? doc.themes.find((k) => k.id === themeId) : null
   if (kit) {
@@ -60,7 +62,7 @@ export function briefContext(doc, { research = true, learnings = true, themeId =
 const CHECKS = [
   ['client', 'Client or brand', (b) => b.client],
   ['offer', 'What you sell', (b) => b.offer],
-  ['goal', 'Goal', (b) => b.goal],
+  ['goal', 'Goal', (b) => b.goals?.length || b.goal],
   ['audience', 'Audience', (b) => b.target || b.audience?.summary || b.audience?.locations?.length || b.audience?.interests?.length],
   ['voice', 'Voice', (b) => b.voice],
   ['pillars', 'Content pillars', (b) => b.pillars?.some((p) => p?.name)],

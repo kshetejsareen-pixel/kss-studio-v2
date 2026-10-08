@@ -77,6 +77,8 @@ export function emptyBrief() {
   return {
     client: '',
     offer: '',
+    category: '',
+    goals: [],
     goal: '',
     target: '',
     audience: { summary: '', ageMin: 25, ageMax: 55, genders: [], locations: [], interests: [] },
@@ -85,6 +87,7 @@ export function emptyBrief() {
     dos: '',
     donts: '',
     competitors: '',
+    reading: [],
     cta: '',
     cadence: { perWeek: 3, mix: { single: 40, carousel: 40, reel: 20 } },
     keyDates: [],
@@ -269,6 +272,8 @@ export function normalizeDoc(raw) {
     cadence: { ...base.brief.cadence, ...(b.cadence || {}), mix: { ...base.brief.cadence.mix, ...(b.cadence?.mix || {}) } },
     pillars: Array.isArray(b.pillars) ? b.pillars : [],
     keyDates: Array.isArray(b.keyDates) ? b.keyDates : [],
+    goals: Array.isArray(b.goals) ? b.goals : [],
+    reading: Array.isArray(b.reading) ? b.reading : [],
   }
   doc.research = { ...base.research, ...(src.research || {}) }
   doc.feed = { ...base.feed, ...(src.feed || {}) }

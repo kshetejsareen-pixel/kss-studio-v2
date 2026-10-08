@@ -447,7 +447,7 @@ export const INTEREST_GROUPS = [
   { group: 'Real Estate', items: ['Real estate', 'Property management', 'Hotels', 'Hospitality'] },
 ]
 
-export const INDIA_CITIES = ['Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad', 'Gurgaon', 'Noida', 'Jaipur', 'Chandigarh', 'Surat', 'Kochi']
+export const INDIA_CITIES = ['Delhi', 'Mumbai', 'Bangalore', 'Chennai', 'Hyderabad', 'Pune', 'Kolkata', 'Ahmedabad', 'Gurgaon', 'Noida', 'Jaipur', 'Chandigarh', 'Lucknow', 'Indore', 'Goa', 'Surat', 'Kochi', 'Coimbatore', 'Nagpur']
 
 export const AD_SYSTEM = (context, objective, placement, funnel, advPlus = false, audience = '') => {
   const objStrategy = {
